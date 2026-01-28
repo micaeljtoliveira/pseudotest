@@ -1,0 +1,61 @@
+[project]
+name = "pseudotest"
+dynamic = ["version"]
+authors = [
+    {name = "Micael Oliveira", email="micael.oliveira@anu.edu.au"},
+]
+description = "Pseudotest: Regression testing framework for scientific software"
+readme = "README.md"
+license = "MPL-2.0"
+requires-python = ">=3.7"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "ruamel.yaml",
+]
+
+[build-system]
+requires = ["setuptools>=80.0", "setuptools_scm[toml]>=8"]
+build-backend = "setuptools.build_meta"
+
+[project.optional-dependencies]
+devel = [
+    "ruff",
+    "pre-commit",
+]
+test = [
+    "pytest>=6.0",
+    "pytest-mock",
+    "pytest-cov",
+]
+
+[project.scripts]
+pseudotest = "pseudotest.runner:main"
+
+[project.urls]
+Homepage = "https://github.com/*/pseudotest"
+Repository = "https://github.com/*/pseudotest"
+Issues = "https://github.com/*/pseudotest/issues"
+
+[tool.pytest.ini_options]
+addopts = ["--cov=pseudotest", "--cov-report=term", "--cov-report=html"]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+omit = ["setup.py"]
+
+[tool.ruff]                                                                                                                                                                                
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "C4", "SIM", "PTH", "UP", "I", "N", "C901"]

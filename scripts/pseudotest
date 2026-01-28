@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""
+Entry point script for Pseudotest YAML regression testing
+"""
+
+import sys
+
+from pseudotest.runner import main
+
+if __name__ == "__main__":
+    sys.exit(main())

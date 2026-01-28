@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+recursive-include pseudotest *.py
+recursive-include scripts *
+global-exclude *.pyc
+global-exclude __pycache__
