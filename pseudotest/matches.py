@@ -231,20 +231,22 @@ def grepcount_matcher(lines: List[str], params: List[Any]) -> Optional[str]:
     return str(sum(1 for line in lines if pattern in line))
 
 
-def size_matcher(lines: List[str], params: List[Any]) -> Optional[str]:
-    """Execute size match: get file size in bytes from text file lines
+def size_matcher(file_path: Path, params: List[Any]) -> Optional[str]:
+    """Execute size match: get file size in bytes
 
     Args:
-        lines: File content as list of lines
+        file_path: Path to the file to measure
         params: Empty list (not used)
 
     Returns:
-        String representation of total character count
+        String representation of file size in bytes
     """
-    # Calculate file size from lines (sum of line lengths)
-    # This works for text files that have been read with readlines()
-    total_chars = sum(len(line) for line in lines)
-    return str(total_chars)
+    try:
+        # Get actual file size in bytes - works for both text and binary files
+        file_size = file_path.stat().st_size
+        return str(file_size)
+    except (FileNotFoundError, OSError):
+        return None
 
 
 MATCHER_DISPATCH: dict[str, Callable[[Any, List[Any]], Optional[str]]] = {
@@ -326,35 +328,39 @@ def match(name: str, params: ChainMap[str, Any], work_dir: Path, extra_indent: i
     """Execute a single match with a single parameter set (no broadcasting)"""
 
     file = params["file"]
-
     filepath = work_dir / file
-    try:
-        with filepath.open("r", errors="replace") as f:
-            lines = f.readlines()
-    except (FileNotFoundError, UnicodeDecodeError) as e:
-        logging.debug(f"   Error reading file {file}: {e}")
-        return False
 
-    reference_value = params.get("value")
-
+    # Handle size matches without reading file contents
     if "size" in params:
         reference_value = params["size"]
-        calculated_value = size_matcher(lines, [])
-    elif "grep" in params and "field" in params and "line" in params:
-        calculated_value = grepfield_matcher(lines, [params["grep"], params["field"], params["line"]])
-    elif "grep" in params and "column" in params and "line" in params:
-        calculated_value = grep_matcher(lines, [params["grep"], params["column"], params["line"]])
-    elif "grep" in params and "count" in params:
-        reference_value = params["count"]
-        calculated_value = grepcount_matcher(lines, [params["grep"]])
-    elif "line" in params and "field" in params:
-        calculated_value = linefield_matcher(lines, [params["line"], params["field"]])
-    elif "line" in params and "column" in params:
-        calculated_value = line_matcher(lines, [params["line"], params["column"]])
-    elif "line" in params and "field_re" in params and "field_im" in params:
-        calculated_value = linefield_abs_matcher(lines, [params["line"], params["field_re"], params["field_im"]])
+        calculated_value = size_matcher(filepath, [])
     else:
-        raise UsageError("Invalid match parameters")
+        # Read file contents only when needed for content-based matches
+        try:
+            with filepath.open("r", errors="replace") as f:
+                lines = f.readlines()
+        except (FileNotFoundError, UnicodeDecodeError) as e:
+            logging.debug(f"   Error reading file {file}: {e}")
+            return False
+
+        reference_value = params.get("value")
+
+        # Content-based matchers that require file contents
+        if "grep" in params and "field" in params and "line" in params:
+            calculated_value = grepfield_matcher(lines, [params["grep"], params["field"], params["line"]])
+        elif "grep" in params and "column" in params and "line" in params:
+            calculated_value = grep_matcher(lines, [params["grep"], params["column"], params["line"]])
+        elif "grep" in params and "count" in params:
+            reference_value = params["count"]
+            calculated_value = grepcount_matcher(lines, [params["grep"]])
+        elif "line" in params and "field" in params:
+            calculated_value = linefield_matcher(lines, [params["line"], params["field"]])
+        elif "line" in params and "column" in params:
+            calculated_value = line_matcher(lines, [params["line"], params["column"]])
+        elif "line" in params and "field_re" in params and "field_im" in params:
+            calculated_value = linefield_abs_matcher(lines, [params["line"], params["field_re"], params["field_im"]])
+        else:
+            raise UsageError("Invalid match parameters")
 
     if calculated_value is None:
         return False
