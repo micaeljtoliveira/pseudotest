@@ -29,6 +29,46 @@ class PseudoTestRunner:
         self.failed_matches = 0
         self.total_matches = 0
 
+    def _print_execution_output(self, temp_dir: Path, input_file: str) -> None:
+        """Print stdout and stderr output from failed execution
+
+        Args:
+            temp_dir: Directory containing stdout and stderr files
+            input_file: Name of the input file for context
+        """
+        stdout_file = temp_dir / "stdout"
+        stderr_file = temp_dir / "stderr"
+
+        # Check current logging level to determine how much to show
+        show_full_output = logging.getLogger().isEnabledFor(logging.DEBUG)
+
+        for output_file, output_name in [(stdout_file, "STDOUT"), (stderr_file, "STDERR")]:
+            if output_file.exists():
+                try:
+                    content = output_file.read_text(errors="replace")
+                    if content.strip():  # Show content if there's actual content
+                        lines = content.splitlines()
+
+                        print(f"\n{self.colors.RED}=== {output_name} from {input_file} ==={self.colors.RESET}")
+
+                        if show_full_output or len(lines) <= 10:
+                            # Show full content in debug mode or if <= 10 lines
+                            print(content)
+                        else:
+                            # Show last 10 lines in normal mode
+                            print("... (showing last 10 lines, use -vv to see full output)")
+                            print("\n".join(lines[-10:]))
+
+                        print(f"{self.colors.RED}=== End {output_name} ==={self.colors.RESET}")
+                    else:
+                        # Inform user when file is empty
+                        print(f"\n{self.colors.RED}=== {output_name} from {input_file} is empty ==={self.colors.RESET}")
+                except Exception as e:
+                    logging.debug(f"Failed to read {output_name} file: {e}")
+            else:
+                # Inform user when file doesn't exist
+                print(f"\n{self.colors.RED}=== {output_name} from {input_file} does not exist ==={self.colors.RESET}")
+
     def run_matches(self, current_match_scope: ChainMap[str, Any], work_dir: Path, extra_indent: int = 0):
         """Run all matches and return overall success
 
@@ -79,6 +119,7 @@ class PseudoTestRunner:
         test_dir: Path,
         exec_path: Path,
         temp_dir: Path,
+        expected_failure: bool = False,
     ) -> bool:
         """Run a single test input and return success status
 
@@ -88,9 +129,10 @@ class PseudoTestRunner:
             test_dir: Directory containing test files
             exec_path: Directory containing executables
             temp_dir: Temporary working directory for execution
+            expected_failure: Whether this test is expected to fail
 
         Returns:
-            True if execution succeeds, False otherwise
+            True if execution succeeds (or fails as expected), False otherwise
         """
         # Get executable configuration
         executable_name = input_config["Executable"]
@@ -171,18 +213,25 @@ class PseudoTestRunner:
 
             if not execution_success:
                 logging.debug(f"Executable failed with exit code {process_result.returncode}")
+                # Print stdout and stderr output for failed executions (only if not expected to fail)
+                if not expected_failure:
+                    self._print_execution_output(temp_dir, str(input_file))
 
-            # Log any error output
-            stderr_content = (temp_dir / "stderr").read_text()
-            if stderr_content:
+            # Log any error output for debugging
+            stderr_content = (temp_dir / "stderr").read_text(errors="replace")
+            if stderr_content and execution_success:  # Only log in debug for successful runs
                 logging.debug(f"STDERR: {stderr_content}")
 
         except subprocess.TimeoutExpired:
             logging.debug("Test execution timed out after 600 seconds")
             execution_success = False
+            if not expected_failure:
+                self._print_execution_output(temp_dir, str(input_file))
         except Exception as e:
             logging.debug(f"Test execution failed: {e}")
             execution_success = False
+            if not expected_failure:
+                self._print_execution_output(temp_dir, str(input_file))
         finally:
             # Clean up resources
             if stdin_file:
@@ -230,6 +279,7 @@ class PseudoTestRunner:
 
             # Get configuration scope for this specific input
             input_scope = test_config.input_scope(input_filename)
+            expected_failure = input_scope.get("ExpectedFailure", False)
 
             # Execute the test input
             execution_success = self.run_input(
@@ -238,10 +288,10 @@ class PseudoTestRunner:
                 test_directory,
                 Path(executable_directory),
                 temp_work_dir,
+                expected_failure,
             )
 
             # Handle expected failure cases
-            expected_failure = input_scope.get("ExpectedFailure", False)
             if expected_failure:
                 execution_success = not execution_success
                 display_match_status("Failed execution", execution_success)
