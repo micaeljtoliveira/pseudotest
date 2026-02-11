@@ -4,6 +4,7 @@ This module contains common utilities including exit codes, custom exception cla
 color formatting for terminal output, and display functions.
 """
 
+import re
 import sys
 
 
@@ -88,3 +89,43 @@ def display_match_status(match_name: str, success: bool, extra_indent: int = 0) 
     status_text = f"[{colors.GREEN} OK {colors.RESET}]" if success else f"[{colors.RED}FAIL{colors.RESET}]"
 
     print(f"{base_indent}  {match_name:<{available_width}} {status_text}")
+
+
+def get_precision_from_string_format(value_str: str) -> float:
+    """Get the precision/resolution from a numeric string representation.
+
+    This function analyzes the string format of a number to determine the smallest representable number
+    using that format."""
+
+    try:
+        float(value_str)
+    except (ValueError, TypeError):
+        return 0.0
+
+    clean_str = value_str.strip()
+
+    # Handle scientific notation, including Fortran-style 'D' exponent
+    clean_str = re.sub(r"[dD]", "e", clean_str)  # Replace 'D' with 'e' for scientific notation
+    sci_match = re.match(r"^[+-]?(\d*\.?\d*)[eE]([+-]?\d+)$", clean_str)
+    if sci_match:
+        mantissa, exp_str = sci_match.groups()
+        exponent = int(exp_str)
+
+        if "." in mantissa:
+            # Count digits after decimal in mantissa
+            decimal_digits = len(mantissa.split(".")[1])
+            mantissa_precision = 10 ** (-decimal_digits)
+        else:
+            # Integer mantissa
+            mantissa_precision = 1.0
+
+        return mantissa_precision * (10**exponent)
+
+    # Handle regular numbers
+    if "." in clean_str:
+        # Count decimal places
+        integer_part, decimal_part = clean_str.split(".", 1)
+        return 10 ** (-len(decimal_part))
+    else:
+        # Integer value, precision is 1
+        return 1.0

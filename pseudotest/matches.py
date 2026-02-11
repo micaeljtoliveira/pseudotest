@@ -11,7 +11,7 @@ import math
 from pathlib import Path
 from typing import Any, ChainMap, List, Optional
 
-from pseudotest.utils import UsageError, display_match_status
+from pseudotest.utils import UsageError, display_match_status, get_precision_from_string_format
 
 # =============================================================================
 # Helper Functions
@@ -213,6 +213,18 @@ def match_compare_result(
     if is_numeric_comparison:
         difference = abs(float(calculated_value) - float(reference_value))
         success = difference <= tolerance if tolerance else difference == 0.0
+
+        # Check if tolerance is smaller than the effective precision
+        if tolerance and tolerance > 0:
+            effective_precision = get_precision_from_string_format(calculated_value)
+            if tolerance < effective_precision:
+                indent = " " * (6 + extra_indent)
+                logging.warning(
+                    f"{indent}Tolerance {tolerance} is smaller than the effective precision "
+                    f"{effective_precision} of calculated value '{calculated_value}'. Consider using "
+                    f"tolerance >= {effective_precision:.2e}"
+                )
+
     else:
         success = str(calculated_value) == str(reference_value)
         difference = None
