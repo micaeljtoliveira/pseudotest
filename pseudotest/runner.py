@@ -119,7 +119,8 @@ class PseudoTestRunner:
         test_dir: Path,
         exec_path: Path,
         temp_dir: Path,
-        expected_failure: bool = False,
+        expected_failure: bool,
+        timeout: int,
     ) -> bool:
         """Run a single test input and return success status
 
@@ -130,6 +131,7 @@ class PseudoTestRunner:
             exec_path: Directory containing executables
             temp_dir: Temporary working directory for execution
             expected_failure: Whether this test is expected to fail
+            timeout: Execution timeout in seconds
 
         Returns:
             True if execution succeeds (or fails as expected), False otherwise
@@ -207,7 +209,7 @@ class PseudoTestRunner:
                     stderr=stderr_file,
                     stdin=stdin_file,
                     text=True,
-                    timeout=600,  # 10 minute timeout
+                    timeout=timeout,
                 )
             execution_success = process_result.returncode == 0
 
@@ -223,7 +225,7 @@ class PseudoTestRunner:
                 logging.debug(f"STDERR: {stderr_content}")
 
         except subprocess.TimeoutExpired:
-            logging.debug("Test execution timed out after 600 seconds")
+            logging.debug(f"Test execution timed out after {timeout} seconds")
             execution_success = False
             if not expected_failure:
                 self._print_execution_output(temp_dir, str(input_file))
@@ -242,13 +244,14 @@ class PseudoTestRunner:
 
         return execution_success
 
-    def run(self, test_file_path: str, executable_directory: str, preserve_workdir: bool) -> int:
+    def run(self, test_file_path: str, executable_directory: str, preserve_workdir: bool, timeout: int) -> int:
         """Main entry point for running tests
 
         Args:
             test_file_path: Path to YAML test configuration file
             executable_directory: Directory containing executable binaries
             preserve_workdir: Whether to preserve temporary working directory
+            timeout: Execution timeout in seconds
 
         Returns:
             Exit code (0 for success, non-zero for failure)
@@ -289,6 +292,7 @@ class PseudoTestRunner:
                 Path(executable_directory),
                 temp_work_dir,
                 expected_failure,
+                timeout,
             )
 
             # Handle expected failure cases
@@ -366,11 +370,18 @@ def main(command_line_args: Optional[list[str]] = None) -> int:
         default=0,
         help="Increase verbosity (-v for INFO, -vv for DEBUG)",
     )
+    argument_parser.add_argument(
+        "-t",
+        "--timeout",
+        type=int,
+        default=600,
+        help="Execution timeout in seconds (default: 600, i.e., 10 minutes)",
+    )
     parsed_args = argument_parser.parse_args(command_line_args)
 
     setup_logging(parsed_args.verbose)
     test_runner = PseudoTestRunner()
-    return test_runner.run(parsed_args.test_file, parsed_args.directory, parsed_args.preserve)
+    return test_runner.run(parsed_args.test_file, parsed_args.directory, parsed_args.preserve, parsed_args.timeout)
 
 
 if __name__ == "__main__":
