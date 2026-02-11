@@ -23,6 +23,9 @@ RESERVED_KEYS = {
     "field_im",
     "count",
     "tol",
+    "directory",
+    "count_files",
+    "file_is_present",
 }
 
 

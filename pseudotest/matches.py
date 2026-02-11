@@ -249,6 +249,55 @@ def size_matcher(file_path: Path, params: List[Any]) -> Optional[str]:
         return None
 
 
+def directory_matcher(dir_path: Path, params: List[Any]) -> Optional[str]:
+    """Execute directory match: count files in a directory (ignoring subdirectories)
+
+    Args:
+        dir_path: Path to the directory to count files in
+        params: Empty list (not used)
+
+    Returns:
+        String representation of file count in directory
+    """
+    try:
+        if not dir_path.is_dir():
+            return None
+
+        # Count only files, not subdirectories
+        file_count = sum(1 for item in dir_path.iterdir() if item.is_file())
+        return str(file_count)
+    except (FileNotFoundError, OSError, PermissionError):
+        return None
+
+
+def directory_file_matcher(dir_path: Path, params: List[Any]) -> Optional[str]:
+    """Execute directory file match: check that specified file exists in directory
+
+    Args:
+        dir_path: Path to the directory to check file in
+        params: [filename] where filename is a string filename to check
+
+    Returns:
+        "True" if file exists, "False" otherwise
+    """
+    try:
+        if not dir_path.is_dir():
+            return "False"
+
+        filename = params[0]
+        if not isinstance(filename, str):
+            return "False"
+
+        # Check that the specified file exists in the directory
+        file_path = dir_path / filename
+        if not file_path.is_file():
+            return "False"
+
+        return "True"
+    except (FileNotFoundError, OSError, PermissionError, IndexError, TypeError):
+        return "False"
+
+
 MATCHER_DISPATCH: dict[str, Callable[[Any, List[Any]], Optional[str]]] = {
     "line": line_matcher,
     "linefield": linefield_matcher,
@@ -257,6 +306,8 @@ MATCHER_DISPATCH: dict[str, Callable[[Any, List[Any]], Optional[str]]] = {
     "grepfield": grepfield_matcher,
     "grepcount": grepcount_matcher,
     "size": size_matcher,
+    "directory": directory_matcher,
+    "file_is_present": directory_file_matcher,
 }
 
 
@@ -324,14 +375,24 @@ def match_compare_result(
     return success
 
 
-def match(name: str, params: ChainMap[str, Any], work_dir: Path, extra_indent: int = 0) -> bool:
+def match(name: str, params: ChainMap[str, Any], work_dir: Path, extra_indent: int = 0) -> bool:  # noqa: C901
     """Execute a single match with a single parameter set (no broadcasting)"""
 
-    file = params["file"]
-    filepath = work_dir / file
+    # Determine the target path - directory parameter takes precedence over file
+    if "directory" in params:
+        filepath = work_dir / params["directory"]
+    else:
+        file = params["file"]
+        filepath = work_dir / file
 
-    # Handle size matches without reading file contents
-    if "size" in params:
+    # Handle matches that don't require file content reading
+    if "directory" in params and "file_is_present" in params:
+        reference_value = "True"  # We expect the file to be present
+        calculated_value = directory_file_matcher(filepath, [params["file_is_present"]])
+    elif "directory" in params and "count_files" in params:
+        reference_value = params["count_files"]
+        calculated_value = directory_matcher(filepath, [])
+    elif "size" in params:
         reference_value = params["size"]
         calculated_value = size_matcher(filepath, [])
     else:
