@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 from pathlib import Path
 from typing import Any, ChainMap, Optional
@@ -69,7 +70,7 @@ class PseudoTestRunner:
                 # Inform user when file doesn't exist
                 print(f"\n{self.colors.RED}=== {output_name} from {input_file} does not exist ==={self.colors.RESET}")
 
-    def run_matches(self, current_match_scope: ChainMap[str, Any], work_dir: Path, extra_indent: int = 0):
+    def run_matches(self, current_match_scope: ChainMap[str, Any], work_dir: Path, extra_indent: int = 2):
         """Run all matches and return overall success
 
         Updates internal counters for total and failed matches.
@@ -121,8 +122,8 @@ class PseudoTestRunner:
         temp_dir: Path,
         expected_failure: bool,
         timeout: int,
-    ) -> bool:
-        """Run a single test input and return success status
+    ) -> tuple[bool, float]:
+        """Run a single test input and return success status and execution time
 
         Args:
             input_config: Configuration scope for this specific input
@@ -134,7 +135,7 @@ class PseudoTestRunner:
             timeout: Execution timeout in seconds
 
         Returns:
-            True if execution succeeds (or fails as expected), False otherwise
+            Tuple of (success_status, execution_time_seconds)
         """
         # Get executable configuration
         executable_name = input_config["Executable"]
@@ -200,6 +201,7 @@ class PseudoTestRunner:
 
         # Execute the command and capture output
         execution_success = False
+        start_time = time.time()
         try:
             with (temp_dir / "stdout").open("w") as stdout_file, (temp_dir / "stderr").open("w") as stderr_file:
                 process_result = subprocess.run(
@@ -242,7 +244,8 @@ class PseudoTestRunner:
                 # Remove input file if not using stdin
                 (temp_dir / working_input_name).unlink(missing_ok=True)
 
-        return execution_success
+        execution_time = time.time() - start_time
+        return execution_success, execution_time
 
     def run(self, test_file_path: str, executable_directory: str, preserve_workdir: bool, timeout: int) -> int:
         """Main entry point for running tests
@@ -285,7 +288,7 @@ class PseudoTestRunner:
             expected_failure = input_scope.get("ExpectedFailure", False)
 
             # Execute the test input
-            execution_success = self.run_input(
+            execution_success, execution_time = self.run_input(
                 input_scope,
                 Path(input_filename),
                 test_directory,
@@ -294,6 +297,9 @@ class PseudoTestRunner:
                 expected_failure,
                 timeout,
             )
+
+            # Display execution time
+            print(f"    Elapsed time: {execution_time:.3f}s")
 
             # Handle expected failure cases
             if expected_failure:
@@ -306,6 +312,7 @@ class PseudoTestRunner:
 
             # Run matches only if execution was successful (or expected to fail and did)
             if execution_success:
+                print("    Matches:")
                 match_definitions = input_scope.get("Matches", [])
                 self.run_matches(match_definitions, temp_work_dir)
 
