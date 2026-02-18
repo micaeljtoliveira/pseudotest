@@ -215,7 +215,7 @@ register_match_handler(
 # =============================================================================
 
 
-def match(name: str, params: ChainMap[str, Any], work_dir: Path, indent_level: int = 3) -> bool:
+def match(name: str, params: ChainMap[str, Any], work_dir: Path, indent_level: int = 3) -> tuple[bool, str | None]:
     """Execute a match operation and compare the result against the expected value.
 
     Routes to the appropriate registered handler based on the parameter keys.
@@ -227,7 +227,7 @@ def match(name: str, params: ChainMap[str, Any], work_dir: Path, indent_level: i
         indent_level: Nesting level for output display
 
     Returns:
-        True if match succeeds, False otherwise.
+        Tuple of (success, calculated_value).
     """
     # Determine the target path — directory parameter takes precedence over file
     filepath = work_dir / params["directory"] if "directory" in params else work_dir / params["file"]
@@ -242,8 +242,9 @@ def match(name: str, params: ChainMap[str, Any], work_dir: Path, indent_level: i
 
     # Check if calculation succeeded
     if calculated_value is None:
-        return False
+        return False, None
 
     # Perform comparison and return result
     tolerance = params.get("tol")
-    return match_compare_result(name, calculated_value, reference_value, tolerance, indent_level=indent_level)
+    success = match_compare_result(name, calculated_value, reference_value, tolerance, indent_level=indent_level)
+    return success, calculated_value

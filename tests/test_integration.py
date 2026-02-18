@@ -1579,3 +1579,336 @@ class TestPrintExecutionOutput:
         formatter.print_execution_output(tmp_path, "test_input.txt")
         captured = capsys.readouterr()
         assert "is empty" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# YAML report (-r) tests
+# ---------------------------------------------------------------------------
+
+
+class TestYAMLReport:
+    """Tests for the -r / --report YAML report feature."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, tmp_path, exec_dir, make_executable, make_input):
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_input(tmp_path)
+        self.exec_dir = exec_dir
+        self.tmp_path = tmp_path
+
+    def _load_raw_report(self, path):
+        from ruamel.yaml import YAML as _YAML
+
+        return _YAML().load(path.open())
+
+    def _load_report(self, path):
+        raw = self._load_raw_report(path)
+        # Unwrap the top-level test-file key
+        key = next(iter(raw))
+        return raw[key]
+
+    def test_report_written_on_pass(self, make_yaml, run_pseudotest):
+        """Report is written and contains expected keys when all matches pass."""
+        yaml_file = make_yaml(
+            self.tmp_path,
+            """\
+            Name: Report pass
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        report_path = self.tmp_path / "report.yaml"
+        rc = run_pseudotest(yaml_file, self.exec_dir, extra_args=["-r", str(report_path)])
+
+        assert rc == ExitCode.OK
+        assert report_path.exists()
+        report = self._load_report(report_path)
+        assert report["Name"] == "Report pass"
+        assert report["Enabled"] is True
+        assert report["Executable"] == "mock.py"
+        assert report["Inputs"]["input.txt"]["InputMethod"] == "argument"
+        assert report["Inputs"]["input.txt"]["ExpectedFailure"] is False
+        assert report["Inputs"]["input.txt"]["Execution"] == "pass"
+        energy = report["Inputs"]["input.txt"]["Matches"]["energy"]
+        assert energy["file"] == "results.txt"
+        assert energy["grep"] == "Energy:"
+        assert energy["field"] == 2
+        assert energy["value"] == -42.5
+        assert energy["reference"] == -42.5
+
+    def test_report_written_on_failure(self, make_yaml, run_pseudotest):
+        """Report reflects calculated values when matches fail."""
+        yaml_file = make_yaml(
+            self.tmp_path,
+            """\
+            Name: Report fail
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  wrong:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: 999.0
+            """,
+        )
+        report_path = self.tmp_path / "report.yaml"
+        rc = run_pseudotest(yaml_file, self.exec_dir, extra_args=["-r", str(report_path)])
+
+        assert rc == ExitCode.TEST_FAILURE
+        report = self._load_report(report_path)
+        wrong = report["Inputs"]["input.txt"]["Matches"]["wrong"]
+        assert wrong["value"] == -42.5  # calculated value, not reference
+        assert wrong["reference"] == 999.0  # original reference value
+
+    def test_report_with_multiple_matches(self, make_yaml, run_pseudotest):
+        """Report includes all match results with parameters."""
+        yaml_file = make_yaml(
+            self.tmp_path,
+            """\
+            Name: Report multi
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+                  status:
+                    file: results.txt
+                    grep: "Status"
+                    field: 2
+                    value: converged
+            """,
+        )
+        report_path = self.tmp_path / "report.yaml"
+        rc = run_pseudotest(yaml_file, self.exec_dir, extra_args=["-r", str(report_path)])
+
+        assert rc == ExitCode.OK
+        report = self._load_report(report_path)
+        matches = report["Inputs"]["input.txt"]["Matches"]
+        assert matches["energy"]["value"] == -42.5
+        assert matches["energy"]["reference"] == -42.5
+        assert matches["energy"]["grep"] == "Energy:"
+        assert matches["status"]["value"] == "converged"
+        assert matches["status"]["reference"] == "converged"
+        assert matches["status"]["grep"] == "Status"
+
+    def test_report_execution_failure(self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest):
+        """Report records execution failure and has no Matches key."""
+        make_executable(exec_dir, "fail.py", MOCK_FAILING_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Report exec fail
+            Executable: fail.py
+            Inputs:
+              input.txt:
+                Matches:
+                  dummy:
+                    file: results.txt
+                    grep: "x"
+                    field: 1
+                    value: 1
+            """,
+        )
+        report_path = tmp_path / "report.yaml"
+        rc = run_pseudotest(yaml_file, exec_dir, extra_args=["-r", str(report_path)])
+
+        assert rc == ExitCode.TEST_FAILURE
+        report = self._load_report(report_path)
+        assert report["Inputs"]["input.txt"]["InputMethod"] == "argument"
+        assert report["Inputs"]["input.txt"]["Execution"] == "fail"
+        assert "Matches" not in report["Inputs"]["input.txt"]
+
+    def test_report_has_elapsed_time(self, make_yaml, run_pseudotest):
+        """Report includes elapsed time for each input."""
+        yaml_file = make_yaml(
+            self.tmp_path,
+            """\
+            Name: Report timing
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        report_path = self.tmp_path / "report.yaml"
+        run_pseudotest(yaml_file, self.exec_dir, extra_args=["-r", str(report_path)])
+
+        report = self._load_report(report_path)
+        elapsed = report["Inputs"]["input.txt"]["Elapsed time"]
+        assert isinstance(elapsed, float)
+        assert elapsed >= 0.0
+
+    def test_no_report_when_flag_absent(self, make_yaml, run_pseudotest):
+        """No report file is created when -r is not given."""
+        yaml_file = make_yaml(
+            self.tmp_path,
+            """\
+            Name: No report
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        report_path = self.tmp_path / "report.yaml"
+        run_pseudotest(yaml_file, self.exec_dir)
+        assert not report_path.exists()
+
+    def test_report_nested_match_group(self, make_yaml, run_pseudotest):
+        """Report preserves nested match group structure with calculated values."""
+        yaml_file = make_yaml(
+            self.tmp_path,
+            """\
+            Name: Nested report
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  results_group:
+                    file: results.txt
+                    energy:
+                      grep: "Energy:"
+                      field: 2
+                      value: -42.5000
+                    iterations:
+                      grep: "Iterations"
+                      field: 2
+                      value: 10
+            """,
+        )
+        report_path = self.tmp_path / "report.yaml"
+        rc = run_pseudotest(yaml_file, self.exec_dir, extra_args=["-r", str(report_path)])
+
+        assert rc == ExitCode.OK
+        report = self._load_report(report_path)
+        group = report["Inputs"]["input.txt"]["Matches"]["results_group"]
+        assert isinstance(group, dict)
+        assert group["energy"]["value"] == -42.5
+        assert group["energy"]["reference"] == -42.5
+        assert group["iterations"]["value"] == 10
+        assert group["iterations"]["reference"] == 10
+
+    def test_report_directory_match(self, make_yaml, run_pseudotest):
+        """Report includes directory match parameters with calculated value."""
+        yaml_file = make_yaml(
+            self.tmp_path,
+            """\
+            Name: Dir report
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  dir_count:
+                    directory: output_dir
+                    count_files: 2
+            """,
+        )
+        report_path = self.tmp_path / "report.yaml"
+        rc = run_pseudotest(yaml_file, self.exec_dir, extra_args=["-r", str(report_path)])
+
+        assert rc == ExitCode.OK
+        report = self._load_report(report_path)
+        dir_match = report["Inputs"]["input.txt"]["Matches"]["dir_count"]
+        assert dir_match["directory"] == "output_dir"
+        assert dir_match["count_files"] == 2
+        assert dir_match["reference"] == 2
+
+    def test_report_omits_internal_keys(self, make_yaml, run_pseudotest):
+        """Report does not include internal keys like 'tol' and 'match'."""
+        yaml_file = make_yaml(
+            self.tmp_path,
+            """\
+            Name: Report tol
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+                    tol: 0.01
+            """,
+        )
+        report_path = self.tmp_path / "report.yaml"
+        run_pseudotest(yaml_file, self.exec_dir, extra_args=["-r", str(report_path)])
+
+        report = self._load_report(report_path)
+        energy = report["Inputs"]["input.txt"]["Matches"]["energy"]
+        assert energy["tol"] == 0.01
+        assert "match" not in energy
+        assert energy["value"] == -42.5
+
+    def test_report_expected_failure(self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest):
+        """Report shows ExpectedFailure: true when set."""
+        make_executable(exec_dir, "fail.py", MOCK_FAILING_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Report expected fail
+            Executable: fail.py
+            Inputs:
+              input.txt:
+                ExpectedFailure: true
+            """,
+        )
+        report_path = tmp_path / "report.yaml"
+        rc = run_pseudotest(yaml_file, exec_dir, extra_args=["-r", str(report_path)])
+
+        assert rc == ExitCode.OK
+        report = self._load_report(report_path)
+        assert report["Inputs"]["input.txt"]["ExpectedFailure"] is True
+        assert report["Inputs"]["input.txt"]["Execution"] == "pass"
+
+    def test_report_top_level_key_is_test_file(self, make_yaml, run_pseudotest):
+        """Top-level report key is the test file path, with leading './' stripped."""
+        yaml_file = make_yaml(
+            self.tmp_path,
+            """\
+            Name: Key test
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        report_path = self.tmp_path / "report.yaml"
+        run_pseudotest(yaml_file, self.exec_dir, extra_args=["-r", str(report_path)])
+
+        raw = self._load_raw_report(report_path)
+        top_key = next(iter(raw))
+        assert top_key == str(yaml_file)
+        assert "Name" in raw[top_key]

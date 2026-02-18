@@ -67,11 +67,24 @@ def main(command_line_args: list[str] | None = None) -> int:
         default=600,
         help="Execution timeout in seconds (default: 600, i.e., 10 minutes)",
     )
+    argument_parser.add_argument(
+        "-r",
+        "--report",
+        default=None,
+        metavar="FILE",
+        help="Write a YAML execution report to FILE",
+    )
     parsed_args = argument_parser.parse_args(command_line_args)
 
     setup_logging(parsed_args.verbose)
     test_runner = PseudoTestRunner()
-    return test_runner.run(parsed_args.test_file, parsed_args.directory, parsed_args.preserve, parsed_args.timeout)
+    return test_runner.run(
+        parsed_args.test_file,
+        parsed_args.directory,
+        parsed_args.preserve,
+        parsed_args.timeout,
+        report_file=parsed_args.report,
+    )
 
 
 if __name__ == "__main__":

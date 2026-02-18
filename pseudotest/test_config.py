@@ -28,6 +28,12 @@ RESERVED_KEYS = {
     "file_is_present",
 }
 
+# Keys that hold the reference value (only one should be present per match)
+REFERENCE_KEYS = frozenset({"value", "size", "count_files", "count", "file_is_present"})
+
+# Internal keys that should not appear in the report
+INTERNAL_KEYS = frozenset({"match"})
+
 
 def broadcast_params(params: ChainMap[str, Any]) -> list[ChainMap[str, Any]]:
     """Broadcast parameters containing lists to multiple parameter sets"""
