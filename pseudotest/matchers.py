@@ -215,7 +215,7 @@ register_match_handler(
 # =============================================================================
 
 
-def match(name: str, params: ChainMap[str, Any], work_dir: Path, extra_indent: int = 0) -> bool:
+def match(name: str, params: ChainMap[str, Any], work_dir: Path, indent_level: int = 3) -> bool:
     """Execute a match operation and compare the result against the expected value.
 
     Routes to the appropriate registered handler based on the parameter keys.
@@ -224,7 +224,7 @@ def match(name: str, params: ChainMap[str, Any], work_dir: Path, extra_indent: i
         name: Descriptive name for the match (used in output display)
         params: Configuration parameters (target, match type, expected value, …)
         work_dir: Working directory containing the target files
-        extra_indent: Additional indentation for nested output display
+        indent_level: Nesting level for output display
 
     Returns:
         True if match succeeds, False otherwise.
@@ -246,4 +246,4 @@ def match(name: str, params: ChainMap[str, Any], work_dir: Path, extra_indent: i
 
     # Perform comparison and return result
     tolerance = params.get("tol")
-    return match_compare_result(name, calculated_value, reference_value, tolerance, extra_indent=extra_indent)
+    return match_compare_result(name, calculated_value, reference_value, tolerance, indent_level=indent_level)

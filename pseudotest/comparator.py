@@ -4,7 +4,7 @@ import logging
 import re
 from typing import Any
 
-from pseudotest.formatting import display_match_status
+from pseudotest.formatting import display_match_status, indent
 
 # ---------------------------------------------------------------------------
 # Numeric precision
@@ -86,7 +86,7 @@ def match_compare_result(
     calculated_value: str,
     reference_value: Any,
     tolerance: float | None = None,
-    extra_indent: int = 0,
+    indent_level: int = 2,
 ) -> bool:
     """Compare *calculated_value* against *reference_value* and display results.
 
@@ -101,7 +101,7 @@ def match_compare_result(
         reference_value: Expected reference value to compare against
         tolerance: Optional numerical tolerance for floating point comparison.
                   If None, exact equality is required for numbers.
-        extra_indent: Additional indentation spaces for nested output display
+        indent_level: Nesting level for output display
 
     Returns:
         True if values match within tolerance (or exactly for strings),
@@ -116,9 +116,9 @@ def match_compare_result(
         if tolerance and tolerance > 0:
             effective_precision = get_precision_from_string_format(calculated_value)
             if tolerance < effective_precision:
-                indent = " " * (6 + extra_indent)
+                detail_indent = indent(indent_level + 1)
                 logging.warning(
-                    f"{indent}Tolerance {tolerance} is smaller than the effective precision "
+                    f"{detail_indent}Tolerance {tolerance} is smaller than the effective precision "
                     f"{effective_precision} of calculated value '{calculated_value}'. Consider using "
                     f"tolerance >= {effective_precision:.2e}"
                 )
@@ -126,26 +126,26 @@ def match_compare_result(
         success = str(calculated_value) == str(reference_value)
         difference = None
 
-    display_match_status(match_name, success, extra_indent)
+    display_match_status(match_name, success, indent_level)
 
     if not success:
-        indent = " " * (6 + extra_indent)
-        print(f"{indent}" + "-" * 40)
+        detail_indent = indent(indent_level + 1)
+        print(f"{detail_indent}" + "-" * 40)
         if difference is not None:
-            print(f"{indent}Calculated value : {calculated_value}")
-            print(f"{indent}Reference value  : {reference_value}")
-            print(f"{indent}Difference       : {difference}")
+            print(f"{detail_indent}Calculated value : {calculated_value}")
+            print(f"{detail_indent}Reference value  : {reference_value}")
+            print(f"{detail_indent}Difference       : {difference}")
             if abs(float(reference_value)) > 1e-10:
                 rel_diff = abs(float(calculated_value) - float(reference_value)) / abs(float(reference_value)) * 100.0
-                print(f"{indent}Deviation [%]    : {rel_diff:.6f}")
+                print(f"{detail_indent}Deviation [%]    : {rel_diff:.6f}")
             if tolerance:
-                print(f"{indent}Tolerance        : {tolerance}")
+                print(f"{detail_indent}Tolerance        : {tolerance}")
                 if abs(float(reference_value)) > 1e-10:
                     rel_tol = tolerance / abs(float(reference_value)) * 100.0
-                    print(f"{indent}Tolerance [%]    : {rel_tol:.6f}")
+                    print(f"{detail_indent}Tolerance [%]    : {rel_tol:.6f}")
         else:
-            print(f"{indent}Calculated value : '{calculated_value}'")
-            print(f"{indent}Expected value   : '{reference_value}'")
-        print(f"{indent}" + "-" * 40)
+            print(f"{detail_indent}Calculated value : '{calculated_value}'")
+            print(f"{detail_indent}Expected value   : '{reference_value}'")
+        print(f"{detail_indent}" + "-" * 40)
 
     return success

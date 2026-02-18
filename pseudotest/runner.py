@@ -8,12 +8,13 @@ delegating execution to :class:`~pseudotest.executor.TestExecutor`, and delegati
 import logging
 import shutil
 import tempfile
+from collections import ChainMap
 from pathlib import Path
-from typing import Any, ChainMap
+from typing import Any
 
 from pseudotest.exceptions import ExitCode
 from pseudotest.executor import TestExecutor
-from pseudotest.formatting import Colors, OutputFormatter, display_match_status
+from pseudotest.formatting import Colors, OutputFormatter, display_match_status, indent
 from pseudotest.matchers import match
 from pseudotest.test_config import RESERVED_KEYS, TestConfig, broadcast_params
 
@@ -37,7 +38,7 @@ class PseudoTestRunner:
         self.failed_matches = 0
         self.total_matches = 0
 
-    def run_matches(self, current_match_scope: ChainMap[str, Any], work_dir: Path, extra_indent: int = 2):
+    def run_matches(self, current_match_scope: ChainMap[str, Any], work_dir: Path, indent_level: int = 3):
         """Recursively walk the match tree and evaluate every leaf match.
 
         Updates internal counters for total and failed matches.
@@ -46,7 +47,7 @@ class PseudoTestRunner:
             current_match_scope: Match configuration scope containing
                 parameters and nested matches
             work_dir: Working directory where output files are located
-            extra_indent: Additional indentation level for nested output
+            indent_level: Nesting level for output display
         """
         local_match_params = {key: current_match_scope[key] for key in RESERVED_KEYS if key in current_match_scope}
 
@@ -57,25 +58,25 @@ class PseudoTestRunner:
             combined_match_def = ChainMap(current_match_scope[match_name], local_match_params)
 
             if all(key in RESERVED_KEYS for key in match_definition):
-                # Leaf match — evaluate it
+                # Leaf match, so evaluate it
                 param_sets = broadcast_params(combined_match_def)
 
                 if len(param_sets) > 1:
-                    print(f"{' ' * (2 + extra_indent)}  {match_name:<{50 - extra_indent}}")
-                    nested_indent = 2
+                    print(f"{indent(indent_level)}{match_name}")
+                    nested_level = indent_level + 1
                 else:
-                    nested_indent = 0
+                    nested_level = indent_level
 
                 for param_set in param_sets:
                     self.total_matches += 1
                     display_name = param_set.get("match", match_name) if len(param_sets) > 1 else match_name
-                    match_success = match(display_name, param_set, work_dir, extra_indent=extra_indent + nested_indent)
+                    match_success = match(display_name, param_set, work_dir, indent_level=nested_level)
                     if not match_success:
                         self.failed_matches += 1
             else:
-                # Nested match group — recurse
-                print(f"{' ' * (2 + extra_indent)}  {match_name:<{50 - extra_indent}}")
-                self.run_matches(combined_match_def, work_dir, extra_indent + 2)
+                # Nested match group, need to recursively evaluate children
+                print(f"{indent(indent_level)}{match_name}")
+                self.run_matches(combined_match_def, work_dir, indent_level + 1)
 
     def run(self, test_file_path: str, executable_directory: str, preserve_workdir: bool, timeout: int) -> int:
         """Main entry point for running tests.
@@ -107,7 +108,7 @@ class PseudoTestRunner:
         # Process each test input
         print("Inputs:")
         for input_filename in test_config.data["Inputs"]:
-            print(f"  {input_filename}:")
+            print(f"{indent(1)}{input_filename}:")
 
             input_scope = test_config.input_scope(input_filename)
             expected_failure = input_scope.get("ExpectedFailure", False)
@@ -123,26 +124,26 @@ class PseudoTestRunner:
                 timeout,
             )
 
-            print(f"    Elapsed time: {execution_time:.3f}s")
+            print(f"{indent(2)}Elapsed time: {execution_time:.3f}s")
 
             if expected_failure:
                 execution_success = not execution_success
-                display_match_status("Failed execution", execution_success)
+                display_match_status("Failed execution", execution_success, indent_level=2)
             else:
-                display_match_status("Execution", execution_success)
+                display_match_status("Execution", execution_success, indent_level=2)
 
             self.failed_executions += 0 if execution_success else 1
 
             if execution_success:
-                print("    Matches:")
+                print(f"{indent(2)}Matches:")
                 match_definitions = input_scope.get("Matches", [])
                 self.run_matches(match_definitions, temp_work_dir)
 
         # Display test summary
         print("Test Summary:")
-        print(f"  Failed executions : {self.failed_executions:-5}")
-        print(f"  Total matches     : {self.total_matches:-5}")
-        print(f"  Failed matches    : {self.failed_matches:-5}")
+        print(f"{indent(1)}Failed executions : {self.failed_executions:-5}")
+        print(f"{indent(1)}Total matches     : {self.total_matches:-5}")
+        print(f"{indent(1)}Failed matches    : {self.failed_matches:-5}")
 
         if preserve_workdir:
             logging.debug(f"Preserved working directory: {temp_work_dir}")

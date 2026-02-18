@@ -4,6 +4,18 @@ import logging
 import sys
 from pathlib import Path
 
+INDENT_STEP = 2
+STATUS_COLUMN = 54
+
+
+def indent(level: int) -> str:
+    """Return an indentation string for the given nesting *level*.
+
+    Level 0 produces no indentation; each subsequent level adds
+    :data:`INDENT_STEP` spaces.
+    """
+    return " " * (INDENT_STEP * level)
+
 
 class Colors:
     """ANSI color codes for terminal output.
@@ -27,23 +39,21 @@ class Colors:
             self.RESET = ""
 
 
-def display_match_status(match_name: str, success: bool, extra_indent: int = 0) -> None:
+def display_match_status(match_name: str, success: bool, indent_level: int = 2) -> None:
     """Display the status of a match with appropriate formatting.
 
     Args:
         match_name: Name of the match to display
         success: Whether the match succeeded
-        extra_indent: Additional indentation for nested output
+        indent_level: Nesting level (each level = :data:`INDENT_STEP` spaces)
     """
     colors = Colors()
-    base_indent = " " * (2 + extra_indent)
-
-    # Calculate available width for match name, accounting for status indicator
-    available_width = 50 - extra_indent
+    prefix = indent(indent_level)
+    name_width = STATUS_COLUMN - len(prefix)
 
     status_text = f"[{colors.GREEN} OK {colors.RESET}]" if success else f"[{colors.RED}FAIL{colors.RESET}]"
 
-    print(f"{base_indent}  {match_name:<{available_width}} {status_text}")
+    print(f"{prefix}{match_name:<{name_width}} {status_text}")
 
 
 class OutputFormatter:
