@@ -5,7 +5,7 @@ Entry point script for Pseudotest YAML regression testing
 
 import sys
 
-from pseudotest.runner import main
+from pseudotest.cli import main
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -31,7 +31,7 @@ RESERVED_KEYS = {
 
 def broadcast_params(params: ChainMap[str, Any]) -> List[ChainMap[str, Any]]:
     """Broadcast parameters containing lists to multiple parameter sets"""
-    from pseudotest.utils import UsageError
+    from pseudotest.exceptions import UsageError
 
     # Check if parameters include any list and get the broadcast length
     length = 0

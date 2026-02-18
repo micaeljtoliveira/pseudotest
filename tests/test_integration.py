@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from pseudotest.runner import main
-from pseudotest.utils import ExitCode
+from pseudotest.cli import main
+from pseudotest.exceptions import ExitCode
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -165,7 +165,7 @@ sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
-# Tests – basic pass / fail
+# Basic pass / fail tests
 # ---------------------------------------------------------------------------
 
 
@@ -233,7 +233,7 @@ class TestBasicPassFail:
 
 
 # ---------------------------------------------------------------------------
-# Tests – match types
+# Match types tests
 # ---------------------------------------------------------------------------
 
 
@@ -430,7 +430,7 @@ class TestMatchTypes:
                     directory: output_dir
             """,
         )
-        from pseudotest.utils import UsageError
+        from pseudotest.exceptions import UsageError
 
         with pytest.raises(UsageError, match="file_is_present.*count_files"):
             run_pseudotest(yaml_file, self.exec_dir)
@@ -450,7 +450,7 @@ class TestMatchTypes:
                     file_is_present: 42
             """,
         )
-        from pseudotest.utils import UsageError
+        from pseudotest.exceptions import UsageError
 
         with pytest.raises(UsageError, match="file_is_present.*must be a string"):
             run_pseudotest(yaml_file, self.exec_dir)
@@ -477,7 +477,7 @@ class TestMatchTypes:
 
 
 # ---------------------------------------------------------------------------
-# Tests – input methods
+# Test input methods
 # ---------------------------------------------------------------------------
 
 
@@ -531,7 +531,7 @@ class TestInputMethods:
 
 
 # ---------------------------------------------------------------------------
-# Tests – execution failures & edge cases
+# Execution failures & edge cases tests
 # ---------------------------------------------------------------------------
 
 
@@ -699,7 +699,7 @@ class TestExecutionEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# Tests – CLI / logging
+# CLI / logging tests
 # ---------------------------------------------------------------------------
 
 
@@ -752,7 +752,7 @@ class TestCLIOptions:
 
 
 # ---------------------------------------------------------------------------
-# Tests – output printing for failed executions
+# Output printing for failed executions tests
 # ---------------------------------------------------------------------------
 
 
@@ -811,7 +811,7 @@ class TestFailedExecutionOutput:
 
 
 # ---------------------------------------------------------------------------
-# Tests – stderr from successful execution
+# Stderr from successful execution tests
 # ---------------------------------------------------------------------------
 
 
@@ -842,7 +842,7 @@ class TestStderrOutput:
 
 
 # ---------------------------------------------------------------------------
-# Tests – multiple inputs in one YAML
+# Multiple inputs in one YAML tests
 # ---------------------------------------------------------------------------
 
 
@@ -879,7 +879,7 @@ class TestMultipleInputs:
 
 
 # ---------------------------------------------------------------------------
-# Tests – nested match groups & broadcast params
+# Nested match groups & broadcast params tests
 # ---------------------------------------------------------------------------
 
 
@@ -973,7 +973,7 @@ class TestNestedAndBroadcast:
 
 
 # ---------------------------------------------------------------------------
-# Tests – string comparison failure details
+# String comparison failure details tests
 # ---------------------------------------------------------------------------
 
 
@@ -1002,7 +1002,7 @@ class TestStringMismatch:
 
 
 # ---------------------------------------------------------------------------
-# Tests – error paths in runner (missing exec, permissions, missing input, …)
+# Error paths in runner tests (missing exec, permissions, missing input, etc)
 # ---------------------------------------------------------------------------
 
 
@@ -1117,7 +1117,7 @@ class TestRunnerErrorPaths:
                     value: x
             """,
         )
-        from pseudotest.utils import UsageError
+        from pseudotest.exceptions import UsageError
 
         with pytest.raises(UsageError, match="Unknown input method"):
             run_pseudotest(yaml_file, exec_dir)
@@ -1148,7 +1148,7 @@ class TestRunnerErrorPaths:
 
 
 # ---------------------------------------------------------------------------
-# Tests – test_config error paths
+# TestConfig error paths tests
 # ---------------------------------------------------------------------------
 
 
@@ -1172,8 +1172,8 @@ class TestConfigErrors:
     def test_broadcast_mismatched_lengths(self):
         from collections import ChainMap
 
+        from pseudotest.exceptions import UsageError
         from pseudotest.test_config import broadcast_params
-        from pseudotest.utils import UsageError
 
         params = ChainMap({"a": [1, 2, 3], "b": [4, 5]})
         with pytest.raises(UsageError, match="same length"):
@@ -1181,7 +1181,8 @@ class TestConfigErrors:
 
 
 # ---------------------------------------------------------------------------
-# Unit tests – matches helper functions (edge cases)
+# Unit tests for matches helper functions
+# (mostly edge cases, to be moved elsewhere later)
 # ---------------------------------------------------------------------------
 
 
@@ -1189,54 +1190,54 @@ class TestMatchesHelpers:
     """Cover uncovered branches in matches.py helper functions."""
 
     def test_get_target_line_positive_out_of_bounds(self):
-        from pseudotest.matches import _get_target_line
+        from pseudotest.value_extractors import get_target_line
 
-        assert _get_target_line(["a", "b"], 5) is None
+        assert get_target_line(["a", "b"], 5) is None
 
     def test_get_target_line_negative_index(self):
-        from pseudotest.matches import _get_target_line
+        from pseudotest.value_extractors import get_target_line
 
-        assert _get_target_line(["a", "b", "c"], -1) == "c"
-        assert _get_target_line(["a", "b", "c"], -3) == "a"
+        assert get_target_line(["a", "b", "c"], -1) == "c"
+        assert get_target_line(["a", "b", "c"], -3) == "a"
 
     def test_get_target_line_negative_out_of_bounds(self):
-        from pseudotest.matches import _get_target_line
+        from pseudotest.value_extractors import get_target_line
 
-        assert _get_target_line(["a", "b"], -5) is None
+        assert get_target_line(["a", "b"], -5) is None
 
     def test_find_pattern_line_offset_out_of_bounds(self):
-        from pseudotest.matches import _find_pattern_line
+        from pseudotest.value_extractors import find_pattern_line
 
         lines = ["first", "second", "third"]
-        assert _find_pattern_line(lines, "third", 1) is None
+        assert find_pattern_line(lines, "third", 1) is None
 
     def test_find_pattern_line_not_found(self):
-        from pseudotest.matches import _find_pattern_line
+        from pseudotest.value_extractors import find_pattern_line
 
-        assert _find_pattern_line(["a", "b"], "z") is None
+        assert find_pattern_line(["a", "b"], "z") is None
 
     def test_extract_field_from_none_line(self):
-        from pseudotest.matches import _extract_field_from_line
+        from pseudotest.value_extractors import extract_field_from_line
 
-        assert _extract_field_from_line(None, 1) is None
+        assert extract_field_from_line(None, 1) is None
 
     def test_extract_field_out_of_bounds(self):
-        from pseudotest.matches import _extract_field_from_line
+        from pseudotest.value_extractors import extract_field_from_line
 
-        assert _extract_field_from_line("one two", 5) is None
+        assert extract_field_from_line("one two", 5) is None
 
     def test_extract_column_from_none_line(self):
-        from pseudotest.matches import _extract_column_from_line
+        from pseudotest.value_extractors import extract_column_from_line
 
-        assert _extract_column_from_line(None, 1) is None
+        assert extract_column_from_line(None, 1) is None
 
     def test_extract_column_out_of_bounds(self):
-        from pseudotest.matches import _extract_column_from_line
+        from pseudotest.value_extractors import extract_column_from_line
 
-        assert _extract_column_from_line("short", 100) is None
+        assert extract_column_from_line("short", 100) is None
 
     def test_is_number_special_values(self):
-        from pseudotest.matches import is_number
+        from pseudotest.comparator import is_number
 
         assert is_number("nan") is True
         assert is_number("inf") is True
@@ -1245,20 +1246,21 @@ class TestMatchesHelpers:
         assert is_number("not_a_num") is False
 
     def test_is_number_none(self):
-        from pseudotest.matches import is_number
+        from pseudotest.comparator import is_number
 
         assert is_number(None) is False
 
 
 # ---------------------------------------------------------------------------
-# Unit tests – match_compare_result edge cases
+# match_compare_result tests
+# (mostly edge cases, to be moved elsewhere later)
 # ---------------------------------------------------------------------------
 
 
 class TestMatchCompareResult:
     def test_numeric_mismatch_with_tolerance_detail(self):
         """Cover the tolerance-vs-precision warning path."""
-        from pseudotest.matches import match_compare_result
+        from pseudotest.comparator import match_compare_result
 
         # tolerance smaller than the effective precision => triggers warning
         result = match_compare_result("test_prec", "1.2345e+02", 123.46, tolerance=1e-6)
@@ -1266,64 +1268,65 @@ class TestMatchCompareResult:
 
     def test_numeric_match_near_zero_reference(self):
         """Cover the branch where |reference| <= 1e-10 (no deviation % printed)."""
-        from pseudotest.matches import match_compare_result
+        from pseudotest.comparator import match_compare_result
 
         result = match_compare_result("zero_ref", "0.0001", 0.0, tolerance=None)
         assert result is False
 
     def test_numeric_match_with_tol_and_deviation(self):
         """Cover full failure output including tolerance percentage."""
-        from pseudotest.matches import match_compare_result
+        from pseudotest.comparator import match_compare_result
 
         result = match_compare_result("tol_dev", "10.0", 20.0, tolerance=0.5)
         assert result is False
 
 
 # ---------------------------------------------------------------------------
-# Unit tests – utils.get_precision_from_string_format
+# utils.get_precision_from_string_format tests
+# (mostly edge cases, to be moved elsewhere later)
 # ---------------------------------------------------------------------------
 
 
 class TestGetPrecision:
     def test_non_numeric_string(self):
-        from pseudotest.utils import get_precision_from_string_format
+        from pseudotest.comparator import get_precision_from_string_format
 
         assert get_precision_from_string_format("abc") == 0.0
 
     def test_scientific_notation_with_decimal(self):
-        from pseudotest.utils import get_precision_from_string_format
+        from pseudotest.comparator import get_precision_from_string_format
 
         p = get_precision_from_string_format("1.23e+02")
         assert abs(p - 1.0) < 1e-12  # 0.01 * 100 = 1.0
 
     def test_scientific_notation_integer_mantissa(self):
-        from pseudotest.utils import get_precision_from_string_format
+        from pseudotest.comparator import get_precision_from_string_format
 
         p = get_precision_from_string_format("5e+03")
         assert abs(p - 1000.0) < 1e-6
 
     def test_fortran_d_notation(self):
-        from pseudotest.utils import get_precision_from_string_format
+        from pseudotest.comparator import get_precision_from_string_format
 
         # Python's float() cannot parse Fortran D notation, so it returns 0.0
         p = get_precision_from_string_format("1.5D+01")
         assert p == 0.0
 
     def test_integer_precision(self):
-        from pseudotest.utils import get_precision_from_string_format
+        from pseudotest.comparator import get_precision_from_string_format
 
         p = get_precision_from_string_format("42")
         assert p == 1.0
 
     def test_decimal_precision(self):
-        from pseudotest.utils import get_precision_from_string_format
+        from pseudotest.comparator import get_precision_from_string_format
 
         p = get_precision_from_string_format("3.14")
         assert abs(p - 0.01) < 1e-12
 
 
 # ---------------------------------------------------------------------------
-# Unit tests – Colors with TTY mock
+# Colors with TTY mock tests (to be moved elsewhere later)
 # ---------------------------------------------------------------------------
 
 
@@ -1335,7 +1338,7 @@ class TestColorsTTY:
         fake_tty = io.StringIO()
         fake_tty.isatty = lambda: True
         monkeypatch.setattr("sys.stdout", fake_tty)
-        from pseudotest.utils import Colors
+        from pseudotest.formatting import Colors
 
         c = Colors()
         assert c.BLUE == "\033[34m"
@@ -1345,7 +1348,7 @@ class TestColorsTTY:
 
 
 # ---------------------------------------------------------------------------
-# Tests – content match errors exercised via integration
+# Content match errors exercised via integration tests
 # ---------------------------------------------------------------------------
 
 
@@ -1375,7 +1378,7 @@ class TestContentMatchErrors:
                     value: x
             """,
         )
-        from pseudotest.utils import UsageError
+        from pseudotest.exceptions import UsageError
 
         with pytest.raises(UsageError, match="grep.*or.*line"):
             run_pseudotest(yaml_file, self.exec_dir)
@@ -1396,7 +1399,7 @@ class TestContentMatchErrors:
                     value: x
             """,
         )
-        from pseudotest.utils import UsageError
+        from pseudotest.exceptions import UsageError
 
         with pytest.raises(UsageError, match="field.*column.*field_re"):
             run_pseudotest(yaml_file, self.exec_dir)
@@ -1483,7 +1486,7 @@ class TestContentMatchErrors:
 
 
 # ---------------------------------------------------------------------------
-# Tests – subprocess exception handler in runner.run_input
+# Subprocess exception handler in runner.run_input tests
 # ---------------------------------------------------------------------------
 
 
@@ -1527,49 +1530,52 @@ class TestSubprocessException:
 
 
 # ---------------------------------------------------------------------------
-# Tests – __init__.main() entry point
+# __init__.main() entry point tests
 # ---------------------------------------------------------------------------
 
 
 class TestPackageMain:
-    """Cover pseudotest.__init__.main() (lines 18-19)."""
+    """Cover pseudotest.main() which now delegates to cli.main()."""
 
-    def test_package_main_no_args(self, monkeypatch):
-        """Calling pseudotest.main() with no CLI args → SystemExit(2) from argparse."""
+    def test_package_main_with_mock_runner(self, monkeypatch):
+        """Calling pseudotest.main() delegates to cli.main() and creates a PseudoTestRunner."""
         from unittest.mock import MagicMock
 
-        import pseudotest
+        import pseudotest.cli
 
         mock_run = MagicMock(return_value=0)
-        monkeypatch.setattr(pseudotest, "PseudoTestRunner", lambda: type("R", (), {"run": mock_run})())
-        pseudotest.main()
+        monkeypatch.setattr(pseudotest.cli, "PseudoTestRunner", lambda: type("R", (), {"run": mock_run})())
+        import pseudotest
+
+        result = pseudotest.main(["test.yaml", "-D", "."])
         mock_run.assert_called_once()
+        assert result == 0
 
 
 # ---------------------------------------------------------------------------
-# Tests – _print_execution_output edge cases
+# _print_execution_output edge cases tests
 # ---------------------------------------------------------------------------
 
 
 class TestPrintExecutionOutput:
-    """Directly call _print_execution_output to cover edge-case branches."""
+    """Directly call OutputFormatter.print_execution_output to cover edge-case branches."""
 
     def test_output_files_dont_exist(self, tmp_path, capsys):
-        """Cover the 'does not exist' branch (runner.py L71)."""
-        from pseudotest.runner import PseudoTestRunner as Runner
+        """Cover the 'does not exist' branch."""
+        from pseudotest.formatting import OutputFormatter
 
-        runner = Runner()
-        runner._print_execution_output(tmp_path, "test_input.txt")
+        formatter = OutputFormatter()
+        formatter.print_execution_output(tmp_path, "test_input.txt")
         captured = capsys.readouterr()
         assert "does not exist" in captured.out
 
     def test_output_files_empty(self, tmp_path, capsys):
-        """Cover the 'is empty' branch (runner.py L57)."""
-        from pseudotest.runner import PseudoTestRunner as Runner
+        """Cover the 'is empty' branch."""
+        from pseudotest.formatting import OutputFormatter
 
         (tmp_path / "stdout").write_text("")
         (tmp_path / "stderr").write_text("")
-        runner = Runner()
-        runner._print_execution_output(tmp_path, "test_input.txt")
+        formatter = OutputFormatter()
+        formatter.print_execution_output(tmp_path, "test_input.txt")
         captured = capsys.readouterr()
         assert "is empty" in captured.out
