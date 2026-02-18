@@ -31,8 +31,20 @@ MatchHandler = Callable[[Path, ChainMap[str, Any]], tuple[str | None, Any]]
 
 _MATCH_HANDLERS: list[tuple[MatchPredicate, MatchHandler]] = []
 
+# Accumulated key sets. These are populated by register_match_handler()
+RESERVED_KEYS: set[str] = set()
+REFERENCE_KEYS: set[str] = set()
+INTERNAL_KEYS: set[str] = set()
 
-def register_match_handler(predicate: MatchPredicate, handler: MatchHandler) -> None:
+
+def register_match_handler(
+    predicate: MatchPredicate,
+    handler: MatchHandler,
+    *,
+    keys: set[str] | None = None,
+    reference_keys: set[str] | None = None,
+    internal_keys: set[str] | None = None,
+) -> None:
     """Register a match handler with an explicit selection predicate.
 
     Handlers are evaluated in registration order; the first whose
@@ -43,8 +55,21 @@ def register_match_handler(predicate: MatchPredicate, handler: MatchHandler) -> 
                    *handler* should process this match.
         handler: A callable ``(Path, ChainMap) -> (str | None, Any)``
                  that computes the (calculated, reference) value pair.
+        keys: Parameter keys recognised by this handler
+              (added to :data:`RESERVED_KEYS`).
+        reference_keys: Subset of *keys* that hold a reference value
+                        (added to :data:`REFERENCE_KEYS`).
+        internal_keys: Subset of *keys* that are internal and should not
+                       appear in reports (added to :data:`INTERNAL_KEYS`).
     """
     _MATCH_HANDLERS.append((predicate, handler))
+    if keys:
+        RESERVED_KEYS.update(keys)
+    if reference_keys:
+        REFERENCE_KEYS.update(reference_keys)
+    if internal_keys:
+        INTERNAL_KEYS.update(internal_keys)
+        RESERVED_KEYS.update(internal_keys)
 
 
 # =============================================================================
@@ -196,17 +221,31 @@ def _handle_content_from_file(filepath: Path, params: ChainMap[str, Any]) -> tup
 # Register built-in handlers
 # ---------------------------------------------------------------------------
 
+# Shared keys used across all handlers
+register_match_handler(
+    predicate=lambda _: False,
+    handler=lambda _p, _c: (None, None),
+    keys={"tol"},
+    internal_keys={"match"},
+)
+
 register_match_handler(
     predicate=lambda params: "directory" in params,
     handler=handle_directory_matches,
+    keys={"directory", "count_files", "file_is_present"},
+    reference_keys={"count_files", "file_is_present"},
 )
 register_match_handler(
     predicate=lambda params: "file" in params and "size" in params,
     handler=handle_file_matches,
+    keys={"file", "size"},
+    reference_keys={"size"},
 )
 register_match_handler(
     predicate=lambda params: "file" in params and "size" not in params,
     handler=_handle_content_from_file,
+    keys={"file", "grep", "field", "column", "line", "field_re", "field_im", "value", "count"},
+    reference_keys={"value", "count"},
 )
 
 

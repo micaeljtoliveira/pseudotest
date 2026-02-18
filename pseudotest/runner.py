@@ -15,9 +15,9 @@ from typing import Any
 from pseudotest.exceptions import ExitCode
 from pseudotest.executor import TestExecutor
 from pseudotest.formatting import Colors, OutputFormatter, display_match_status, indent
-from pseudotest.matchers import match
+from pseudotest.matchers import RESERVED_KEYS, match
 from pseudotest.report import ReportWriter
-from pseudotest.test_config import RESERVED_KEYS, TestConfig, broadcast_params
+from pseudotest.test_config import TestConfig, broadcast_params
 
 
 class PseudoTestRunner:

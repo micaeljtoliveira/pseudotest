@@ -12,7 +12,8 @@ from collections import ChainMap
 from pathlib import Path
 from typing import Any
 
-from pseudotest.test_config import INTERNAL_KEYS, REFERENCE_KEYS, RESERVED_KEYS, yaml
+from pseudotest.matchers import INTERNAL_KEYS, REFERENCE_KEYS, RESERVED_KEYS
+from pseudotest.test_config import yaml
 
 
 def _cast_to_type(value: str | None, target_type: type) -> Any:

@@ -1,3 +1,5 @@
+"""Test configuration loading and parameter broadcasting for pseudotest."""
+
 from collections import ChainMap
 from pathlib import Path
 from typing import Any
@@ -9,30 +11,6 @@ try:
     yaml = YAML()
 except ImportError as e:
     raise ImportError("ruamel.yaml not available. Install with: pip install ruamel.yaml") from e
-
-RESERVED_KEYS = {
-    "match",
-    "file",
-    "value",
-    "size",
-    "grep",
-    "field",
-    "column",
-    "line",
-    "field_re",
-    "field_im",
-    "count",
-    "tol",
-    "directory",
-    "count_files",
-    "file_is_present",
-}
-
-# Keys that hold the reference value (only one should be present per match)
-REFERENCE_KEYS = frozenset({"value", "size", "count_files", "count", "file_is_present"})
-
-# Internal keys that should not appear in the report
-INTERNAL_KEYS = frozenset({"match"})
 
 
 def broadcast_params(params: ChainMap[str, Any]) -> list[ChainMap[str, Any]]:
