@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Any, Optional
+from typing import Any
 
 from pseudotest.formatting import display_match_status
 
@@ -85,7 +85,7 @@ def match_compare_result(
     match_name: str,
     calculated_value: str,
     reference_value: Any,
-    tolerance: Optional[float] = None,
+    tolerance: float | None = None,
     extra_indent: int = 0,
 ) -> bool:
     """Compare *calculated_value* against *reference_value* and display results.

@@ -1,6 +1,6 @@
 from collections import ChainMap
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Try to import yaml
 try:
@@ -29,7 +29,7 @@ RESERVED_KEYS = {
 }
 
 
-def broadcast_params(params: ChainMap[str, Any]) -> List[ChainMap[str, Any]]:
+def broadcast_params(params: ChainMap[str, Any]) -> list[ChainMap[str, Any]]:
     """Broadcast parameters containing lists to multiple parameter sets"""
     from pseudotest.exceptions import UsageError
 
@@ -62,7 +62,7 @@ class TestConfig:
 
     def __init__(self):
         """Initialize a new TestConfig instance"""
-        self.data: Dict[str, Any] = {}
+        self.data: dict[str, Any] = {}
 
     def load(self, file: Path):
         """Load configuration from a YAML file"""

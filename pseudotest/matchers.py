@@ -8,8 +8,10 @@ New match types can be added by registering a handler function via ``register_ma
 
 import logging
 import math
+from collections import ChainMap
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, ChainMap, List
+from typing import Any
 
 from pseudotest.comparator import match_compare_result
 from pseudotest.exceptions import UsageError
@@ -24,8 +26,8 @@ from pseudotest.value_extractors import (
 # Handler registry
 # =============================================================================
 
-MatchPredicate = callable  # (ChainMap[str, Any]) -> bool
-MatchHandler = callable  # (Path, ChainMap[str, Any]) -> tuple[str | None, Any]
+MatchPredicate = Callable[[ChainMap[str, Any]], bool]
+MatchHandler = Callable[[Path, ChainMap[str, Any]], tuple[str | None, Any]]
 
 _MATCH_HANDLERS: list[tuple[MatchPredicate, MatchHandler]] = []
 
@@ -112,7 +114,7 @@ def handle_file_matches(filepath: Path, params: ChainMap[str, Any]) -> tuple[str
     return calculated_value, reference_value
 
 
-def handle_content_matches(lines: List[str], params: ChainMap[str, Any]) -> tuple[str | None, Any]:
+def handle_content_matches(lines: list[str], params: ChainMap[str, Any]) -> tuple[str | None, Any]:
     """Handle content-based matches and return calculated and reference values.
 
     Supports pattern searching, line indexing, field extraction, column

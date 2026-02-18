@@ -4,10 +4,8 @@ Contains pure functions that extract text fragments from file content. No I/O, n
 should be included here.
 """
 
-from typing import List, Optional
 
-
-def get_target_line(lines: List[str], line_num: int) -> Optional[str]:
+def get_target_line(lines: list[str], line_num: int) -> str | None:
     """Extract target line handling positive and negative indexing.
 
     Supports both positive line numbers (0-indexed from start) and negative
@@ -37,7 +35,7 @@ def get_target_line(lines: List[str], line_num: int) -> Optional[str]:
         return lines[line_num]
 
 
-def find_pattern_line(lines: List[str], pattern: str, offset: int = 0) -> Optional[str]:
+def find_pattern_line(lines: list[str], pattern: str, offset: int = 0) -> str | None:
     """Find the line content at specified offset from first line containing *pattern*.
 
     Performs simple substring matching to locate the first occurrence
@@ -69,7 +67,7 @@ def find_pattern_line(lines: List[str], pattern: str, offset: int = 0) -> Option
     return None
 
 
-def extract_field_from_line(line: Optional[str], field_num: int) -> Optional[str]:
+def extract_field_from_line(line: str | None, field_num: int) -> str | None:
     """Extract a specific whitespace-separated field from a line.
 
     Splits the line on whitespace and returns the field at the specified
@@ -97,7 +95,7 @@ def extract_field_from_line(line: Optional[str], field_num: int) -> Optional[str
     return fields[field_num - 1]
 
 
-def extract_column_from_line(line: Optional[str], column_pos: int) -> Optional[str]:
+def extract_column_from_line(line: str | None, column_pos: int) -> str | None:
     """Extract first token starting from a specific column position in a line.
 
     Similar to the shell command: ``cut -c<column>- | awk '{print $1}'``

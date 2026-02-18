@@ -10,8 +10,9 @@ import logging
 import shutil
 import subprocess
 import time
+from collections import ChainMap
 from pathlib import Path
-from typing import Any, ChainMap
+from typing import Any, TextIO
 
 from pseudotest.exceptions import UsageError
 from pseudotest.formatting import OutputFormatter
@@ -115,7 +116,7 @@ class TestExecutor:
         input_file: Path,
         test_dir: Path,
         temp_dir: Path,
-        extra_files: list,
+        extra_files: list[str],
         input_method: str,
         rename_target: str | None,
     ) -> str:
@@ -153,7 +154,7 @@ class TestExecutor:
         working_input_name: str,
         input_method: str,
         temp_dir: Path,
-    ) -> tuple[list, object]:
+    ) -> tuple[list[str | Path], TextIO | None]:
         """Build the subprocess command and optional stdin file handle."""
 
         if input_method == "argument":
@@ -175,8 +176,8 @@ class TestExecutor:
 
     def _run_subprocess(
         self,
-        command_args: list,
-        stdin_file,
+        command_args: list[str | Path],
+        stdin_file: TextIO | None,
         temp_dir: Path,
         working_input_name: str,
         input_file: Path,

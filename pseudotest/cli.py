@@ -11,7 +11,6 @@ import argparse
 import logging
 import sys
 import traceback
-from typing import Optional
 
 from pseudotest.exceptions import CliError, ExitCode
 from pseudotest.runner import PseudoTestRunner
@@ -37,7 +36,7 @@ def setup_logging(verbosity_level: int) -> None:
     )
 
 
-def main(command_line_args: Optional[list[str]] = None) -> int:
+def main(command_line_args: list[str] | None = None) -> int:
     """Main entry point for command line execution.
 
     Args:
