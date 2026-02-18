@@ -97,6 +97,13 @@ class ReportWriter:
                 "Inputs": report_inputs,
             }
         }
-        with Path(report_file).open("w") as f:
-            yaml.dump(report, f)
+        path = Path(report_file)
+        if path.exists():
+            with path.open("a") as f:
+                f.write("---\n")
+                yaml.dump(report, f)
+        else:
+            with path.open("w") as f:
+                f.write("---\n")
+                yaml.dump(report, f)
         logging.info(f"Report written to {report_file}")

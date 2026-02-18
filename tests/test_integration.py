@@ -1599,10 +1599,11 @@ class TestYAMLReport:
     def _load_raw_report(self, path):
         from ruamel.yaml import YAML as _YAML
 
-        return _YAML().load(path.open())
+        return list(_YAML().load_all(path.open()))
 
     def _load_report(self, path):
-        raw = self._load_raw_report(path)
+        docs = self._load_raw_report(path)
+        raw = docs[-1]
         # Unwrap the top-level test-file key
         key = next(iter(raw))
         return raw[key]
@@ -1909,6 +1910,38 @@ class TestYAMLReport:
         run_pseudotest(yaml_file, self.exec_dir, extra_args=["-r", str(report_path)])
 
         raw = self._load_raw_report(report_path)
-        top_key = next(iter(raw))
+        top_key = next(iter(raw[-1]))
         assert top_key == str(yaml_file)
-        assert "Name" in raw[top_key]
+        assert "Name" in raw[-1][top_key]
+
+    def test_report_appends_to_existing(self, make_yaml, run_pseudotest):
+        """Running twice appends a second YAML document instead of overwriting."""
+        yaml_file = make_yaml(
+            self.tmp_path,
+            """\
+            Name: Append test
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        report_path = self.tmp_path / "report.yaml"
+        run_pseudotest(yaml_file, self.exec_dir, extra_args=["-r", str(report_path)])
+        run_pseudotest(yaml_file, self.exec_dir, extra_args=["-r", str(report_path)])
+
+        docs = self._load_raw_report(report_path)
+        assert len(docs) == 2
+        for doc in docs:
+            key = next(iter(doc))
+            assert doc[key]["Name"] == "Append test"
+
+        # Verify --- separators in the raw text
+        text = report_path.read_text()
+        assert text.startswith("---\n")
+        assert text.count("---\n") == 2
