@@ -163,6 +163,30 @@ for i in range(20):
 sys.exit(1)
 """
 
+MOCK_MPIEXEC_SCRIPT = """\
+#!/usr/bin/env python3
+\"\"\"Mock MPI launcher: parses -np/-n N, records flag and value, then execs the rest.\"\"\"
+import os, subprocess, sys
+
+args = sys.argv[1:]
+np_flag = None
+np_value = None
+while args:
+    if args[0] in ("-np", "-n"):
+        np_flag = args.pop(0)
+        np_value = args.pop(0)
+    else:
+        break
+# Write flag and value so tests can verify both
+os.makedirs(os.environ.get("TMPDIR", "/tmp"), exist_ok=True)
+with open("mpi_np.txt", "w") as f:
+    f.write(np_value or "unset")
+with open("mpi_flag.txt", "w") as f:
+    f.write(np_flag or "unset")
+result = subprocess.run(args)
+sys.exit(result.returncode)
+"""
+
 
 # ---------------------------------------------------------------------------
 # Basic pass / fail tests
@@ -528,6 +552,235 @@ class TestInputMethods:
             """,
         )
         assert run_pseudotest(yaml_file, exec_dir) == ExitCode.OK
+
+
+# ---------------------------------------------------------------------------
+# MPI execution tests
+# ---------------------------------------------------------------------------
+
+
+class TestMPIExecution:
+    """Cover MPI execution via the MPIEXEC environment variable."""
+
+    def test_mpi_with_processors(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, monkeypatch, capsys
+    ):
+        """When MPIEXEC is set and Processors is given, uses the correct -np value."""
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_executable(exec_dir, "mpiexec", MOCK_MPIEXEC_SCRIPT)
+        make_input(tmp_path)
+        monkeypatch.setenv("MPIEXEC", str(exec_dir / "mpiexec"))
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: MPI test
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Processors: 4
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        rc = run_pseudotest(yaml_file, exec_dir, extra_args=["-p"])
+        assert rc == ExitCode.OK
+        # Extract workdir from captured output and verify -np value
+        captured = capsys.readouterr()
+        workdir = Path([line for line in captured.out.splitlines() if "Using workdir:" in line][0].split(": ", 1)[1])
+        assert (workdir / "mpi_np.txt").read_text() == "4"
+
+    def test_mpi_default_processors(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, monkeypatch, capsys
+    ):
+        """When MPIEXEC is set but Processors is not given, defaults to 1."""
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_executable(exec_dir, "mpiexec", MOCK_MPIEXEC_SCRIPT)
+        make_input(tmp_path)
+        monkeypatch.setenv("MPIEXEC", str(exec_dir / "mpiexec"))
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: MPI default np
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        rc = run_pseudotest(yaml_file, exec_dir, extra_args=["-p"])
+        assert rc == ExitCode.OK
+        captured = capsys.readouterr()
+        workdir = Path([line for line in captured.out.splitlines() if "Using workdir:" in line][0].split(": ", 1)[1])
+        assert (workdir / "mpi_np.txt").read_text() == "1"
+
+    def test_srun_uses_dash_n(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, monkeypatch, capsys
+    ):
+        """When MPIEXEC points to srun, the flag should be -n instead of -np."""
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_executable(exec_dir, "srun", MOCK_MPIEXEC_SCRIPT)
+        make_input(tmp_path)
+        monkeypatch.setenv("MPIEXEC", str(exec_dir / "srun"))
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: srun test
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Processors: 2
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        rc = run_pseudotest(yaml_file, exec_dir, extra_args=["-p"])
+        assert rc == ExitCode.OK
+        captured = capsys.readouterr()
+        workdir = Path([line for line in captured.out.splitlines() if "Using workdir:" in line][0].split(": ", 1)[1])
+        assert (workdir / "mpi_flag.txt").read_text() == "-n"
+        assert (workdir / "mpi_np.txt").read_text() == "2"
+
+    def test_aprun_uses_dash_n(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, monkeypatch, capsys
+    ):
+        """When MPIEXEC points to aprun, the flag should be -n."""
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_executable(exec_dir, "aprun", MOCK_MPIEXEC_SCRIPT)
+        make_input(tmp_path)
+        monkeypatch.setenv("MPIEXEC", str(exec_dir / "aprun"))
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: aprun test
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Processors: 6
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        rc = run_pseudotest(yaml_file, exec_dir, extra_args=["-p"])
+        assert rc == ExitCode.OK
+        captured = capsys.readouterr()
+        workdir = Path([line for line in captured.out.splitlines() if "Using workdir:" in line][0].split(": ", 1)[1])
+        assert (workdir / "mpi_flag.txt").read_text() == "-n"
+        assert (workdir / "mpi_np.txt").read_text() == "6"
+
+    def test_unknown_launcher_defaults_to_np(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, monkeypatch, capsys
+    ):
+        """An unrecognised launcher falls back to -np."""
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_executable(exec_dir, "custom_mpi", MOCK_MPIEXEC_SCRIPT)
+        make_input(tmp_path)
+        monkeypatch.setenv("MPIEXEC", str(exec_dir / "custom_mpi"))
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: unknown launcher test
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Processors: 3
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        rc = run_pseudotest(yaml_file, exec_dir, extra_args=["-p"])
+        assert rc == ExitCode.OK
+        captured = capsys.readouterr()
+        workdir = Path([line for line in captured.out.splitlines() if "Using workdir:" in line][0].split(": ", 1)[1])
+        assert (workdir / "mpi_flag.txt").read_text() == "-np"
+        assert (workdir / "mpi_np.txt").read_text() == "3"
+
+    def test_serial_without_mpiexec(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, monkeypatch
+    ):
+        """When MPIEXEC is not set, Processors key is ignored and runs serially."""
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_input(tmp_path)
+        monkeypatch.delenv("MPIEXEC", raising=False)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Serial test
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Processors: 4
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        rc = run_pseudotest(yaml_file, exec_dir)
+        assert rc == ExitCode.OK
+
+    def test_report_includes_processors(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, monkeypatch
+    ):
+        """Report includes Processors field from input scope."""
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_input(tmp_path)
+        monkeypatch.delenv("MPIEXEC", raising=False)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Report procs
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Processors: 8
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        report_path = tmp_path / "report.yaml"
+        rc = run_pseudotest(yaml_file, exec_dir, extra_args=["-r", str(report_path)])
+        assert rc == ExitCode.OK
+
+        from ruamel.yaml import YAML as _YAML
+
+        docs = list(_YAML().load_all(report_path.open()))
+        report = docs[-1]
+        key = next(iter(report))
+        assert report[key]["Inputs"]["input.txt"]["Processors"] == 8
 
 
 # ---------------------------------------------------------------------------

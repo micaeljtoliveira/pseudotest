@@ -68,6 +68,7 @@ class ReportWriter:
         """Build the per-input report dict (before matches are appended)."""
         return {
             "InputMethod": input_scope.get("InputMethod", "argument"),
+            "Processors": input_scope.get("Processors", 1),
             "ExpectedFailure": expected_failure,
             "Execution": "pass" if execution_success else "fail",
             "Elapsed time": round(execution_time, 3),

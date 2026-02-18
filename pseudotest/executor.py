@@ -7,6 +7,7 @@ Accepts an ``OutputFormatter`` via constructor so that presentation can be swapp
 """
 
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -16,6 +17,22 @@ from typing import Any, TextIO
 
 from pseudotest.exceptions import UsageError
 from pseudotest.formatting import OutputFormatter
+
+# Map MPI launcher basenames to the flag used for specifying processor count.
+# Launchers not listed here fall back to ``-np``.
+_MPI_NP_FLAG: dict[str, str] = {
+    # OpenMPI, MPICH, Intel MPI, MVAPICH2
+    "mpiexec": "-np",
+    "mpirun": "-np",
+    "mpiexec.hydra": "-np",
+    "orterun": "-np",
+    # SLURM
+    "srun": "-n",
+    # Cray
+    "aprun": "-n",
+}
+
+_DEFAULT_NP_FLAG = "-np"
 
 
 class TestExecutor:
@@ -77,6 +94,7 @@ class TestExecutor:
             working_input_name,
             input_method,
             temp_dir,
+            input_config,
         )
 
         return self._run_subprocess(
@@ -154,11 +172,19 @@ class TestExecutor:
         working_input_name: str,
         input_method: str,
         temp_dir: Path,
+        input_config: ChainMap[str, Any] | None = None,
     ) -> tuple[list[str | Path], TextIO | None]:
-        """Build the subprocess command and optional stdin file handle."""
+        """Build the subprocess command and optional stdin file handle.
+
+        When the ``MPIEXEC`` environment variable is set, the command is
+        prefixed with the MPI launcher and the appropriate processor-count
+        flag for that launcher (e.g. ``-np`` for *mpiexec*/*mpirun*,
+        ``-n`` for *srun*/*aprun*).  The mapping lives in
+        :data:`_MPI_NP_FLAG`; unrecognised launchers default to ``-np``.
+        """
 
         if input_method == "argument":
-            command_args = [resolved_executable, working_input_name]
+            command_args: list[str | Path] = [resolved_executable, working_input_name]
             stdin_file = None
             logging.info(f"Executing: {resolved_executable} {working_input_name}")
         elif input_method == "stdin":
@@ -171,6 +197,17 @@ class TestExecutor:
             logging.info(f"Executing: {resolved_executable} (with {working_input_name} in working directory)")
         else:
             raise UsageError(f"Unknown input method: {input_method}")
+
+        # Prepend MPI launcher when MPIEXEC is defined
+        mpiexec = os.environ.get("MPIEXEC")
+        if mpiexec:
+            processors = 1
+            if input_config is not None:
+                processors = input_config.get("Processors", 1)
+            launcher_name = Path(mpiexec).name
+            np_flag = _MPI_NP_FLAG.get(launcher_name, _DEFAULT_NP_FLAG)
+            command_args = [mpiexec, np_flag, str(processors), *command_args]
+            logging.info(f"MPI execution: {mpiexec} {np_flag} {processors}")
 
         return command_args, stdin_file
 
