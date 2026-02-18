@@ -40,7 +40,8 @@ test = [
 ]
 
 [project.scripts]
-pseudotest = "pseudotest.cli:main"
+pseudotest = "pseudotest.cli_run:main"
+pseudotest-update = "pseudotest.cli_update:main"
 
 [project.urls]
 Homepage = "https://github.com/*/pseudotest"

@@ -12,6 +12,7 @@ from collections import ChainMap
 from pathlib import Path
 from typing import Any
 
+from pseudotest.config_updater import apply_match_updates, save_config
 from pseudotest.exceptions import ExitCode
 from pseudotest.executor import TestExecutor
 from pseudotest.formatting import Colors, OutputFormatter, display_match_status, indent
@@ -38,6 +39,8 @@ class PseudoTestRunner:
         self.failed_executions = 0
         self.failed_matches = 0
         self.total_matches = 0
+        self.update_mode: str | None = None
+        self.config_modified = False
 
     def run_matches(
         self,
@@ -77,7 +80,9 @@ class PseudoTestRunner:
                 else:
                     nested_level = indent_level
 
-                for param_set in param_sets:
+                update_results: list[tuple[int, bool, str | None, Any]] = []
+
+                for i, param_set in enumerate(param_sets):
                     self.total_matches += 1
                     display_name = param_set.get("match", match_name) if len(param_sets) > 1 else match_name
                     match_success, calculated_value = match(
@@ -86,6 +91,12 @@ class PseudoTestRunner:
                     if not match_success:
                         self.failed_matches += 1
                     results[display_name] = ReportWriter.build_match_entry(param_set, calculated_value)
+                    update_results.append((i, match_success, calculated_value, param_set))
+
+                if self.update_mode and apply_match_updates(
+                    match_definition, update_results, len(param_sets), self.update_mode
+                ):
+                    self.config_modified = True
             else:
                 # Nested match group, need to recursively evaluate children
                 print(f"{indent(indent_level)}{match_name}")
@@ -100,6 +111,8 @@ class PseudoTestRunner:
         preserve_workdir: bool,
         timeout: int,
         report_file: str | None = None,
+        update_mode: str | None = None,
+        update_output: str | None = None,
     ) -> int:
         """Main entry point for running tests.
 
@@ -109,10 +122,15 @@ class PseudoTestRunner:
             preserve_workdir: Whether to preserve temporary working directory
             timeout: Execution timeout in seconds
             report_file: Optional path to write a YAML execution report
+            update_mode: Optional update mode (``"tolerance"`` or ``"reference"``)
+            update_output: Optional alternative path for updated config file
 
         Returns:
             Exit code (0 for success, non-zero for failure)
         """
+        self.update_mode = update_mode
+        self.config_modified = False
+
         # Load and validate test configuration
         test_config_file = Path(test_file_path)
         test_config = TestConfig()
@@ -188,5 +206,12 @@ class PseudoTestRunner:
         # Write YAML report if requested
         if report_file:
             ReportWriter.write(report_file, test_file_path, test_config.data, report_inputs)
+
+        # Write back updated test configuration if requested
+        if self.update_mode and self.config_modified:
+            output_path = Path(update_output) if update_output else test_config_file
+            save_config(test_config.data, output_path)
+            mode_desc = "tolerances" if self.update_mode == "tolerance" else "reference values"
+            print(f"Updated {mode_desc} in {output_path}")
 
         return exit_code

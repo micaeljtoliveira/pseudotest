@@ -35,6 +35,7 @@ _MATCH_HANDLERS: list[tuple[MatchPredicate, MatchHandler]] = []
 RESERVED_KEYS: set[str] = set()
 REFERENCE_KEYS: set[str] = set()
 INTERNAL_KEYS: set[str] = set()
+NON_UPDATABLE_KEYS: set[str] = set()
 
 
 def register_match_handler(
@@ -44,6 +45,7 @@ def register_match_handler(
     keys: set[str] | None = None,
     reference_keys: set[str] | None = None,
     internal_keys: set[str] | None = None,
+    non_updatable_keys: set[str] | None = None,
 ) -> None:
     """Register a match handler with an explicit selection predicate.
 
@@ -61,6 +63,9 @@ def register_match_handler(
                         (added to :data:`REFERENCE_KEYS`).
         internal_keys: Subset of *keys* that are internal and should not
                        appear in reports (added to :data:`INTERNAL_KEYS`).
+        non_updatable_keys: Subset of *reference_keys* whose values should
+                            never be modified by ``pseudotest-update``
+                            (added to :data:`NON_UPDATABLE_KEYS`).
     """
     _MATCH_HANDLERS.append((predicate, handler))
     if keys:
@@ -70,6 +75,8 @@ def register_match_handler(
     if internal_keys:
         INTERNAL_KEYS.update(internal_keys)
         RESERVED_KEYS.update(internal_keys)
+    if non_updatable_keys:
+        NON_UPDATABLE_KEYS.update(non_updatable_keys)
 
 
 # =============================================================================
@@ -225,7 +232,7 @@ def _handle_content_from_file(filepath: Path, params: ChainMap[str, Any]) -> tup
 register_match_handler(
     predicate=lambda _: False,
     handler=lambda _p, _c: (None, None),
-    keys={"tol"},
+    keys={"tol", "protected"},
     internal_keys={"match"},
 )
 
@@ -234,6 +241,7 @@ register_match_handler(
     handler=handle_directory_matches,
     keys={"directory", "count_files", "file_is_present"},
     reference_keys={"count_files", "file_is_present"},
+    non_updatable_keys={"file_is_present"},
 )
 register_match_handler(
     predicate=lambda params: "file" in params and "size" in params,

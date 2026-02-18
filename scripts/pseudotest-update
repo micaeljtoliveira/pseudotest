@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""
+Entry point script for Pseudotest config updater
+"""
+
+import sys
+
+from pseudotest.cli_update import main
+
+if __name__ == "__main__":
+    sys.exit(main())

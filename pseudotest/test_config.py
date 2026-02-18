@@ -9,6 +9,7 @@ try:
     from ruamel.yaml import YAML
 
     yaml = YAML()
+    yaml.preserve_quotes = True
 except ImportError as e:
     raise ImportError("ruamel.yaml not available. Install with: pip install ruamel.yaml") from e
 

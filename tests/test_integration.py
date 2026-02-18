@@ -17,7 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from pseudotest.cli import main
+from pseudotest.cli_run import main
+from pseudotest.cli_update import main as update_main
 from pseudotest.exceptions import ExitCode
 
 # ---------------------------------------------------------------------------
@@ -79,6 +80,19 @@ def run_pseudotest():
         if extra_args:
             args.extend(extra_args)
         return main(args)
+
+    return _factory
+
+
+@pytest.fixture
+def run_update():
+    """Factory fixture: invoke ``pseudotest-update`` and return its exit code."""
+
+    def _factory(test_yaml: Path, exec_dir: Path, mode: str, output: Path | None = None) -> int:
+        args = [str(test_yaml), "-D", str(exec_dir), mode]
+        if output:
+            args.extend(["-o", str(output)])
+        return update_main(args)
 
     return _factory
 
@@ -1794,10 +1808,10 @@ class TestPackageMain:
         """Calling pseudotest.main() delegates to cli.main() and creates a PseudoTestRunner."""
         from unittest.mock import MagicMock
 
-        import pseudotest.cli
+        import pseudotest.cli_run
 
         mock_run = MagicMock(return_value=0)
-        monkeypatch.setattr(pseudotest.cli, "PseudoTestRunner", lambda: type("R", (), {"run": mock_run})())
+        monkeypatch.setattr(pseudotest.cli_run, "PseudoTestRunner", lambda: type("R", (), {"run": mock_run})())
         import pseudotest
 
         result = pseudotest.main(["test.yaml", "-D", "."])
@@ -2198,3 +2212,807 @@ class TestYAMLReport:
         text = report_path.read_text()
         assert text.startswith("---\n")
         assert text.count("---\n") == 2
+
+
+# ---------------------------------------------------------------------------
+# Config update tests (pseudotest-update script)
+# ---------------------------------------------------------------------------
+
+# Mock that produces a slightly different value to trigger match failures
+MOCK_DRIFTED_SCRIPT = """\
+#!/usr/bin/env python3
+\"\"\"Mock executable that produces values close but not equal to the reference.\"\"\"
+import sys
+
+with open("results.txt", "w") as f:
+    f.write("Energy: -42.5050 Ry\\n")
+    f.write("Force: 3.0000 Ha\\n")
+sys.exit(0)
+"""
+
+
+class TestUpdateTolerance:
+    """Tests for pseudotest-update --tolerance."""
+
+    def test_update_tolerance_basic(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, run_update
+    ):
+        """pseudotest-update -t sets tol on a failing numeric match."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Tol update
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        # First run: match fails (diff = 0.005)
+        rc = run_pseudotest(yaml_file, exec_dir)
+        assert rc == ExitCode.TEST_FAILURE
+
+        # Run with pseudotest-update -t: should rewrite the YAML
+        rc = run_update(yaml_file, exec_dir, "-t")
+        assert rc == ExitCode.TEST_FAILURE  # still fails this run
+
+        # Re-run: now the tolerance should make it pass
+        rc = run_pseudotest(yaml_file, exec_dir)
+        assert rc == ExitCode.OK
+
+        # Verify the YAML was updated with a tol key
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        tol = data["Inputs"]["input.txt"]["Matches"]["energy"]["tol"]
+        assert tol >= 0.005  # at least the observed difference
+
+    def test_update_tolerance_preserves_reference(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """pseudotest-update -t must not change the reference value."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Preserve ref
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        run_update(yaml_file, exec_dir, "-t")
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        assert float(data["Inputs"]["input.txt"]["Matches"]["energy"]["value"]) == -42.5
+
+    def test_update_tolerance_replaces_insufficient_tol(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """When existing tol is too small, pseudotest-update -t increases it."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Replace tol
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+                    tol: 0.001
+            """,
+        )
+        run_update(yaml_file, exec_dir, "-t")
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        tol = data["Inputs"]["input.txt"]["Matches"]["energy"]["tol"]
+        assert tol >= 0.005
+
+    def test_update_tolerance_skips_passing_match(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """Passing matches are not modified by pseudotest-update -t."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Skip passing
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5050
+            """,
+        )
+        rc = run_update(yaml_file, exec_dir, "-t")
+        assert rc == ExitCode.OK
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        assert "tol" not in data["Inputs"]["input.txt"]["Matches"]["energy"]
+
+    def test_update_tolerance_skips_failed_execution(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """No update when execution fails."""
+        make_executable(exec_dir, "fail.py", MOCK_FAILING_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Fail exec
+            Executable: fail.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        original = yaml_file.read_text()
+        run_update(yaml_file, exec_dir, "-t")
+        assert yaml_file.read_text() == original
+
+
+class TestUpdateReference:
+    """Tests for pseudotest-update --reference."""
+
+    def test_update_reference_basic(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, run_update
+    ):
+        """pseudotest-update -r replaces the value with the calculated one."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Ref update
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        rc = run_update(yaml_file, exec_dir, "-r")
+        assert rc == ExitCode.TEST_FAILURE  # still fails this run
+
+        # Re-run: now the reference matches the calculated value
+        rc = run_pseudotest(yaml_file, exec_dir)
+        assert rc == ExitCode.OK
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        assert float(data["Inputs"]["input.txt"]["Matches"]["energy"]["value"]) == pytest.approx(-42.505)
+
+    def test_update_reference_preserves_tolerance(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """pseudotest-update -r must not change existing tolerances."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Preserve tol
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+                    tol: 0.001
+            """,
+        )
+        run_update(yaml_file, exec_dir, "-r")
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        match_entry = data["Inputs"]["input.txt"]["Matches"]["energy"]
+        assert float(match_entry["value"]) == pytest.approx(-42.505)
+        assert match_entry["tol"] == 0.001
+
+    def test_update_reference_skips_passing_match(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """Passing matches are not modified by pseudotest-update -r."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Skip passing
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5050
+            """,
+        )
+        run_update(yaml_file, exec_dir, "-r")
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        assert float(data["Inputs"]["input.txt"]["Matches"]["energy"]["value"]) == -42.505
+
+    def test_update_reference_skips_failed_execution(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """No update when execution fails."""
+        make_executable(exec_dir, "fail.py", MOCK_FAILING_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Fail exec
+            Executable: fail.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        original = yaml_file.read_text()
+        run_update(yaml_file, exec_dir, "-r")
+        assert yaml_file.read_text() == original
+
+    def test_update_reference_skips_extraction_failure(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """No update when the calculated value cannot be extracted."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Bad grep
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  missing:
+                    file: results.txt
+                    grep: "NONEXISTENT:"
+                    field: 2
+                    value: 99.0
+            """,
+        )
+        run_update(yaml_file, exec_dir, "-r")
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        assert float(data["Inputs"]["input.txt"]["Matches"]["missing"]["value"]) == 99.0
+
+    def test_update_reference_multiple_matches(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """Only failing matches are updated; passing ones are left alone."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Multi match
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+                  force:
+                    file: results.txt
+                    grep: "Force:"
+                    field: 2
+                    value: 3.0000
+            """,
+        )
+        run_update(yaml_file, exec_dir, "-r")
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        matches = data["Inputs"]["input.txt"]["Matches"]
+        # energy was wrong → updated
+        assert float(matches["energy"]["value"]) == pytest.approx(-42.505)
+        # force was correct → unchanged
+        assert float(matches["force"]["value"]) == 3.0
+
+    def test_mutually_exclusive_flags(self, tmp_path, exec_dir, make_executable, make_input, make_yaml):
+        """-t and -r cannot be used together."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Mutex test
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        with pytest.raises(SystemExit):
+            update_main([str(yaml_file), "-D", str(exec_dir), "-t", "-r"])
+
+    def test_update_tolerance_broadcast(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, run_update
+    ):
+        """pseudotest-update -t handles broadcast params (list values) correctly."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Broadcast tol
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  values:
+                    file: results.txt
+                    grep: ["Energy:", "Force:"]
+                    field: [2, 2]
+                    value: [-42.5000, 3.0000]
+                    match: [energy, force]
+            """,
+        )
+        run_update(yaml_file, exec_dir, "-t")
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        tol = data["Inputs"]["input.txt"]["Matches"]["values"]["tol"]
+        # tol should be a list: [computed, 0] — energy drifted, force matched
+        assert isinstance(tol, list)
+        assert len(tol) == 2
+        assert tol[0] >= 0.005  # energy difference
+        assert tol[1] == 0  # force passed
+
+        # Re-run: should pass now
+        rc = run_pseudotest(yaml_file, exec_dir)
+        assert rc == ExitCode.OK
+
+    def test_update_reference_broadcast(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, run_update
+    ):
+        """pseudotest-update -r handles broadcast params (list values) correctly."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Broadcast ref
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  values:
+                    file: results.txt
+                    grep: ["Energy:", "Force:"]
+                    field: [2, 2]
+                    value: [-42.5000, 3.0000]
+                    match: [energy, force]
+            """,
+        )
+        run_update(yaml_file, exec_dir, "-r")
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        values = data["Inputs"]["input.txt"]["Matches"]["values"]["value"]
+        assert isinstance(values, list)
+        assert float(values[0]) == pytest.approx(-42.505)
+        assert float(values[1]) == 3.0  # unchanged — it passed
+
+        # Re-run: should pass now
+        rc = run_pseudotest(yaml_file, exec_dir)
+        assert rc == ExitCode.OK
+
+    def test_update_output_writes_to_separate_file(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, run_update
+    ):
+        """pseudotest-update -o writes the updated config to a different file."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Output file
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        original_text = yaml_file.read_text()
+        output_file = tmp_path / "updated.yaml"
+
+        run_update(yaml_file, exec_dir, "-r", output=output_file)
+
+        # Original file is untouched
+        assert yaml_file.read_text() == original_text
+
+        # Updated file exists and has the new value
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(output_file.open())
+        assert float(data["Inputs"]["input.txt"]["Matches"]["energy"]["value"]) == pytest.approx(-42.505)
+
+        # Re-run with the updated file should pass
+        rc = run_pseudotest(output_file, exec_dir)
+        assert rc == ExitCode.OK
+
+
+class TestUpdateFormatPreservation:
+    """Ensure pseudotest-update preserves formatting of untouched values."""
+
+    def test_update_reference_preserves_quotes_and_floats(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """Untouched YAML values must keep their original formatting."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Format test
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      energy:
+        file: results.txt
+        grep: "Energy:"
+        field: 2
+        value: -42.5000
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-r")
+
+        updated = yaml_file.read_text()
+
+        # Double-quoted strings must stay double-quoted
+        assert '"Energy:"' in updated
+
+        # The updated value must keep the same number of decimal places
+        assert "value: -42.5050" in updated
+
+        # Untouched keys should be byte-identical
+        for line in ["file: results.txt", "field: 2", 'grep: "Energy:"']:
+            assert line in updated
+
+    def test_update_tolerance_preserves_unrelated_values(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """Tolerance update must not alter values, quotes, or formatting of other fields."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Format tol
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      energy:
+        file: results.txt
+        grep: "Energy:"
+        field: 2
+        value: -42.5000
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-t")
+
+        updated = yaml_file.read_text()
+
+        # Reference value must be unchanged
+        assert "value: -42.5000" in updated
+        # Double-quoted strings preserved
+        assert '"Energy:"' in updated
+        # A tol key should have been added
+        assert "tol:" in updated
+
+
+class TestUpdateSkipsFileIsPresent:
+    """Ensure file_is_present matches are never modified by pseudotest-update."""
+
+    MOCK_PARTIAL_DIR_SCRIPT = """\
+#!/usr/bin/env python3
+\"\"\"Creates output_dir with only one file (missing_file.txt absent).\"\"\"
+import os, sys
+os.makedirs("output_dir", exist_ok=True)
+with open("output_dir/found.txt", "w") as f:
+    f.write("ok\\n")
+with open("results.txt", "w") as f:
+    f.write("Energy: -42.5050 Ry\\n")
+sys.exit(0)
+"""
+
+    def test_update_reference_skips_file_is_present(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """pseudotest-update -r must not modify file_is_present entries."""
+        make_executable(exec_dir, "mock.py", self.MOCK_PARTIAL_DIR_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Skip fip
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      energy:
+        file: results.txt
+        grep: "Energy:"
+        field: 2
+        value: -42.5000
+      missing:
+        directory: output_dir
+        file_is_present: missing_file.txt
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-r")
+
+        updated = yaml_file.read_text()
+
+        # energy reference should be updated
+        assert "value: -42.5050" in updated
+
+        # file_is_present must remain unchanged (not replaced with "False")
+        assert "file_is_present: missing_file.txt" in updated
+
+    def test_update_tolerance_skips_file_is_present(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """pseudotest-update -t must not add a tolerance to file_is_present entries."""
+        make_executable(exec_dir, "mock.py", self.MOCK_PARTIAL_DIR_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Skip fip tol
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      energy:
+        file: results.txt
+        grep: "Energy:"
+        field: 2
+        value: -42.5000
+      missing:
+        directory: output_dir
+        file_is_present: missing_file.txt
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-t")
+
+        updated = yaml_file.read_text()
+
+        # energy should get a tol
+        assert "tol:" in updated
+
+        # file_is_present entry must be untouched — no tol added next to it
+        lines = updated.splitlines()
+        for i, line in enumerate(lines):
+            if "file_is_present" in line:
+                # The next non-blank line should NOT be a tol key
+                for j in range(i + 1, len(lines)):
+                    if lines[j].strip():
+                        assert "tol" not in lines[j], f"tol was incorrectly added near file_is_present: {lines[j]}"
+                        break
+
+
+class TestUpdateProtectedKey:
+    """Ensure ``protected: true`` prevents updates to a match."""
+
+    def test_protected_reference_not_updated(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """pseudotest-update -r must skip matches with protected: true."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Protected ref
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      energy:
+        file: results.txt
+        grep: "Energy:"
+        field: 2
+        value: -42.5000
+        protected: true
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-r")
+
+        updated = yaml_file.read_text()
+        # Original value must stay unchanged
+        assert "value: -42.5000" in updated
+
+    def test_protected_tolerance_not_updated(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """pseudotest-update -t must skip matches with protected: true."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Protected tol
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      energy:
+        file: results.txt
+        grep: "Energy:"
+        field: 2
+        value: -42.5000
+        protected: true
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-t")
+
+        updated = yaml_file.read_text()
+        # No tol should be added
+        assert "tol:" not in updated
+        # Value unchanged
+        assert "value: -42.5000" in updated
+
+    def test_protected_false_allows_update(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """protected: false must not prevent updates."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Not protected
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      energy:
+        file: results.txt
+        grep: "Energy:"
+        field: 2
+        value: -42.5000
+        protected: false
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-r")
+
+        updated = yaml_file.read_text()
+        # Value should be updated
+        assert "value: -42.5050" in updated
+
+    def test_mixed_protected_and_unprotected(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """Only protected matches are skipped; unprotected ones are updated."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Mixed
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      energy:
+        file: results.txt
+        grep: "Energy:"
+        field: 2
+        value: -42.5000
+        protected: true
+      force:
+        file: results.txt
+        grep: "Force:"
+        field: 2
+        value: 99.0000
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-r")
+
+        updated = yaml_file.read_text()
+        # Protected match untouched
+        assert "value: -42.5000" in updated
+        # Unprotected match updated (Force: 3.0000 from MOCK_DRIFTED_SCRIPT)
+        assert "value: 3.0000" in updated
