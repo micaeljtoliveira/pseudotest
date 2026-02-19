@@ -89,7 +89,7 @@ def main(command_line_args: list[str] | None = None) -> int:
     )
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     try:
         sys.exit(main())
     except CliError as e:

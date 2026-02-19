@@ -10,7 +10,7 @@ try:
 
     yaml = YAML()
     yaml.preserve_quotes = True
-except ImportError as e:
+except ImportError as e:  # pragma: no cover
     raise ImportError("ruamel.yaml not available. Install with: pip install ruamel.yaml") from e
 
 

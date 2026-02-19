@@ -285,7 +285,7 @@ def match(name: str, params: ChainMap[str, Any], work_dir: Path, indent_level: i
             calculated_value, reference_value = handler(filepath, params)
             break
     else:
-        raise UsageError(f"No registered match handler for params: {dict(params)}")
+        raise UsageError(f"No registered match handler for params: {dict(params)}")  # pragma: no cover
 
     # Check if calculation succeeded
     if calculated_value is None:
