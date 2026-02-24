@@ -38,15 +38,18 @@ test = [
     "pytest-mock",
     "pytest-cov",
 ]
+docs = [
+    "zensical",
+]
 
 [project.scripts]
 pseudotest = "pseudotest.cli_run:main"
 pseudotest-update = "pseudotest.cli_update:main"
 
 [project.urls]
-Homepage = "https://github.com/*/pseudotest"
-Repository = "https://github.com/*/pseudotest"
-Issues = "https://github.com/*/pseudotest/issues"
+Homepage = "https://github.com/micaeljtoliveira/pseudotest"
+Repository = "https://github.com/micaeljtoliveira/pseudotest"
+Issues = "https://github.com/micaeljtoliveira/pseudotest/issues"
 
 [tool.pytest.ini_options]
 addopts = ["--cov=pseudotest", "--cov-report=term", "--cov-report=html"]

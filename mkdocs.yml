@@ -1,0 +1,46 @@
+site_name: pseudotest
+site_description: YAML-driven regression testing for scientific software
+site_url: https://micaeljtoliveira.github.io/pseudotest/
+repo_url: https://github.com/micaeljtoliveira/pseudotest
+repo_name: micaeljtoliveira/pseudotest
+site_dir: _site
+
+theme:
+  name: zensical
+  variant: classic
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - User Guide: user-guide.md
+  - Developer Guide: developer-guide.md
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - tables
