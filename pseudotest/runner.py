@@ -93,8 +93,10 @@ class PseudoTestRunner:
                     results[display_name] = ReportWriter.build_match_entry(param_set, calculated_value)
                     update_results.append((i, match_success, calculated_value, param_set))
 
-                if self.update_mode and apply_match_updates(
-                    match_definition, update_results, len(param_sets), self.update_mode
+                if (
+                    self.update_mode
+                    and not combined_match_def.get("protected", False)
+                    and apply_match_updates(match_definition, update_results, len(param_sets), self.update_mode)
                 ):
                     self.config_modified = True
             else:
