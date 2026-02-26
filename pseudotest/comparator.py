@@ -1,6 +1,5 @@
 """Value comparison and numeric precision analysis for pseudotest."""
 
-import logging
 import re
 from typing import Any
 
@@ -108,20 +107,18 @@ def match_compare_result(
         False otherwise.
     """
     is_numeric_comparison = is_number(str(reference_value)) and is_number(calculated_value)
+    tol_too_small = False
+    effective_precision = None
     if is_numeric_comparison:
         difference = abs(float(calculated_value) - float(reference_value))
         success = difference <= tolerance if tolerance else difference == 0.0
 
-        # Check if tolerance is smaller than the effective precision
+        # Check if tolerance is smaller than the effective precision — treat as error
         if tolerance and tolerance > 0:
             effective_precision = get_precision_from_string_format(calculated_value)
             if tolerance < effective_precision:
-                detail_indent = indent(indent_level + 1)
-                logging.warning(
-                    f"{detail_indent}Tolerance {tolerance} is smaller than the effective precision "
-                    f"{effective_precision} of calculated value '{calculated_value}'. Consider using "
-                    f"tolerance >= {effective_precision:.2e}"
-                )
+                tol_too_small = True
+                success = False
     else:
         success = str(calculated_value) == str(reference_value)
         difference = None
@@ -131,7 +128,14 @@ def match_compare_result(
     if not success:
         detail_indent = indent(indent_level + 1)
         print(f"{detail_indent}" + "-" * 40)
-        if difference is not None:
+        if tol_too_small:
+            print(
+                f"{detail_indent}Unreliable comparison, tolerance is too small"
+                f"{detail_indent}Calculated value    : {calculated_value}"
+                f"{detail_indent}Effective precision : {effective_precision}"
+                f"{detail_indent}Tolerance           : {tolerance}"
+            )
+        elif difference is not None:
             print(f"{detail_indent}Calculated value : {calculated_value}")
             print(f"{detail_indent}Reference value  : {reference_value}")
             print(f"{detail_indent}Difference       : {difference}")
@@ -146,6 +150,6 @@ def match_compare_result(
         else:
             print(f"{detail_indent}Calculated value : '{calculated_value}'")
             print(f"{detail_indent}Expected value   : '{reference_value}'")
-        print(f"{detail_indent}" + "-" * 40)
+        print(f"{detail_indent}" + "-" * 45)
 
     return success

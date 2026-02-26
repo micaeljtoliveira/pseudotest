@@ -19,7 +19,7 @@ from typing import Any
 
 from ruamel.yaml.scalarfloat import ScalarFloat
 
-from pseudotest.comparator import is_number
+from pseudotest.comparator import get_precision_from_string_format, is_number
 from pseudotest.matchers import NON_UPDATABLE_KEYS, REFERENCE_KEYS
 from pseudotest.test_config import yaml
 
@@ -181,9 +181,16 @@ def _update_tolerance(
 
     difference = abs(float(calculated_value) - float(reference))
     if difference == 0:
-        return False
-
-    new_tol = compute_tolerance(difference)
+        # Check if the existing tolerance is smaller than the effective precision
+        existing_tol = param_set.get("tol") or 0
+        if not (existing_tol and existing_tol > 0):
+            return False
+        precision = get_precision_from_string_format(calculated_value)
+        if existing_tol >= precision:
+            return False
+        new_tol = 0.0
+    else:
+        new_tol = compute_tolerance(difference)
 
     if total > 1:
         # Broadcast: ensure tol is a list of the right length
