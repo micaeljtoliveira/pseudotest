@@ -1,10 +1,13 @@
 """Command-line interface for pseudotest-update.
 
 A dedicated script for updating test configuration files after running
-the tests.  Supports two mutually-exclusive update modes:
+the tests.  Supports three mutually-exclusive update modes:
 
 - **tolerance** (``-t``): widen tolerances to cover observed differences.
-- **reference** (``-r``): replace reference values with calculated values.
+- **reference** (``-r``): replace reference values with calculated values
+  for failing matches only.
+- **reference-all** (``-R``): replace reference values with calculated
+  values for all matches, including those that already pass.
 
 The updated config is written back to the original file unless
 ``-o FILE`` is given.
@@ -65,7 +68,15 @@ def main(command_line_args: list[str] | None = None) -> int:
         action="store_const",
         const="reference",
         dest="update_mode",
-        help="Update reference values to match calculated values",
+        help="Update reference values for failing matches",
+    )
+    mode_group.add_argument(
+        "-R",
+        "--reference-all",
+        action="store_const",
+        const="reference_all",
+        dest="update_mode",
+        help="Update reference values for all matches, including passing ones",
     )
 
     argument_parser.add_argument(

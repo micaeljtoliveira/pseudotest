@@ -1,11 +1,13 @@
 """In-place YAML configuration updates for pseudotest.
 
-Provides two update modes for fixing match failures:
+Provides three update modes:
 
 - **tolerance**: Compute and set a tolerance that covers the observed
   difference, leaving reference values unchanged.
-- **reference**: Replace reference values with the calculated values,
-  leaving tolerances unchanged.
+- **reference**: Replace reference values with the calculated values
+  for *failing* matches only, leaving tolerances unchanged.
+- **reference_all**: Replace reference values with the calculated values
+  for *all* matches (passing and failing), leaving tolerances unchanged.
 
 Updates are applied directly to the in-memory YAML data structure
 (ruamel.yaml round-trip nodes) and then flushed back to the file,
@@ -125,14 +127,14 @@ def apply_match_updates(
     total: int,
     mode: str,
 ) -> bool:
-    """Apply tolerance or reference updates to *match_def* for failed matches.
+    """Apply tolerance or reference updates to *match_def*.
 
     Args:
         match_def: The raw YAML dict for this match entry (modified in-place).
         results: One ``(index, success, calculated_value, param_set)``
                  tuple per broadcast element.
         total: Total number of broadcast elements (``len(results)``).
-        mode: ``"tolerance"`` or ``"reference"``.
+        mode: ``"tolerance"``, ``"reference"``, or ``"reference_all"``.
 
     Returns:
         ``True`` if at least one update was applied.
@@ -148,13 +150,13 @@ def apply_match_updates(
 
     modified = False
     for index, success, calculated_value, param_set in results:
-        # Skip passing matches and extraction failures
-        if success or calculated_value is None:
+        # Skip extraction failures; in reference_all mode also process passing matches
+        if calculated_value is None or (success and mode != "reference_all"):
             continue
 
         if mode == "tolerance":
             modified |= _update_tolerance(match_def, index, total, calculated_value, param_set)
-        elif mode == "reference":
+        elif mode in ("reference", "reference_all"):
             modified |= _update_reference(match_def, index, total, calculated_value)
 
     return modified

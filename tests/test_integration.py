@@ -1644,6 +1644,139 @@ class TestUpdateReference:
         assert rc == ExitCode.OK
 
 
+class TestUpdateReferenceAll:
+    """Tests for pseudotest-update --reference-all."""
+
+    def test_reference_all_updates_passing_match(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, run_update
+    ):
+        """pseudotest-update -R updates reference values even when the match already passes."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Ref all passing
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5050
+            """,
+        )
+        # Verify the match already passes before updating
+        rc = run_pseudotest(yaml_file, exec_dir)
+        assert rc == ExitCode.OK
+
+        rc = run_update(yaml_file, exec_dir, "-R")
+        assert rc == ExitCode.OK
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        assert float(data["Inputs"]["input.txt"]["Matches"]["energy"]["value"]) == pytest.approx(-42.505)
+
+    def test_reference_all_updates_failing_match(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, run_update
+    ):
+        """pseudotest-update -R also updates failing matches, like -r."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Ref all failing
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5000
+            """,
+        )
+        rc = run_update(yaml_file, exec_dir, "-R")
+        assert rc == ExitCode.TEST_FAILURE  # still fails this run
+
+        rc = run_pseudotest(yaml_file, exec_dir)
+        assert rc == ExitCode.OK
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        assert float(data["Inputs"]["input.txt"]["Matches"]["energy"]["value"]) == pytest.approx(-42.505)
+
+    def test_reference_all_updates_mixed_matches(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """pseudotest-update -R updates both passing and failing matches in one run."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Ref all mixed
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      energy:
+        file: results.txt
+        grep: "Energy:"
+        field: 2
+        value: -42.5000
+      force:
+        file: results.txt
+        grep: "Force:"
+        field: 2
+        value: 3.0000
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-R")
+
+        updated = yaml_file.read_text()
+        # Both values replaced with calculated ones from MOCK_DRIFTED_SCRIPT
+        assert "value: -42.5050" in updated
+        assert "value: 3.0000" in updated
+
+    def test_reference_all_respects_protected(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """pseudotest-update -R must not update matches marked protected: true."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Ref all protected
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      energy:
+        file: results.txt
+        grep: "Energy:"
+        field: 2
+        value: -42.5050
+        protected: true
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-R")
+
+        updated = yaml_file.read_text()
+        assert "value: -42.5050" in updated
+
+
 class TestUpdateFormatPreservation:
     """Ensure pseudotest-update preserves formatting of untouched values."""
 
