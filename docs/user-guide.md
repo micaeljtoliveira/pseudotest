@@ -203,22 +203,22 @@ Forces (Ha/Bohr):
 
 `grep` finds `"Forces (Ha/Bohr):"` and `line: 1` steps to the next line, then `field: 2` extracts `-0.00124`.
 
-**Extracting by whitespace-separated field**
+**Extracting by field**
 
-`field` is 1-based and equivalent to `awk '{print $N}'`:
+`field` is 1-based and splits on whitespace or commas (with optional surrounding whitespace), equivalent to `awk '{print $N}'` for whitespace-separated output but also handling CSV-style output. Two consecutive commas produce an empty field between them:
 
 ```yaml
 Pressure:
   file: output.txt
   grep: "Pressure:"
-  field: 2    # second whitespace token
+  field: 2    # second field (whitespace- or comma-separated)
   value: 101.325
   tol: 0.01
 ```
 
 **Extracting by character column**
 
-`column` extracts from a fixed character position (1-based), then takes the first whitespace-delimited token. This is useful for fixed-width formatted output:
+`column` extracts from a fixed character position (1-based), then takes the first token (delimited by whitespace or commas). This is useful for fixed-width formatted output:
 
 ```yaml
 # Output line: "Band gap (eV)       1.0342  direct"

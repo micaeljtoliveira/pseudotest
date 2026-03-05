@@ -4,6 +4,8 @@ Contains pure functions that extract text fragments from file content. No I/O, n
 should be included here.
 """
 
+import re
+
 
 def get_target_line(lines: list[str], line_num: int) -> str | None:
     """Extract target line handling positive and negative indexing.
@@ -68,28 +70,33 @@ def find_pattern_line(lines: list[str], pattern: str, offset: int = 0) -> str | 
 
 
 def extract_field_from_line(line: str | None, field_num: int) -> str | None:
-    """Extract a specific whitespace-separated field from a line.
+    """Extract a specific field from a line, splitting on whitespace or commas.
 
-    Splits the line on whitespace and returns the field at the specified
-    position.  Similar to: ``awk '{print $N}'`` where *N* is the field number.
+    Splits the line on whitespace sequences or commas (with optional surrounding
+    whitespace) and returns the field at the specified position.  Similar to:
+    ``awk '{print $N}'`` where *N* is the field number, but also treating commas
+    as field separators.  Two consecutive commas produce an empty field between
+    them.
 
     Args:
         line: Line content to extract field from, or None if line doesn't exist
-        field_num: 1-indexed field position after whitespace splitting
+        field_num: 1-indexed field position after splitting
 
     Returns:
-        Content of the specified field as string, or None if line is None
-        or field number is out of bounds
+        Content of the specified field as string (may be empty for consecutive
+        commas), or None if line is None or field number is out of bounds
 
     Examples:
-        >>> extract_field_from_line("first second third", 2)  # "second"
-        >>> extract_field_from_line("first second third", 5)  # None
-        >>> extract_field_from_line(None, 2)                  # None
+        >>> extract_field_from_line("first second third", 2)   # "second"
+        >>> extract_field_from_line("first,second,third", 2)   # "second"
+        >>> extract_field_from_line("a,,b", 2)                 # ""
+        >>> extract_field_from_line("first second third", 5)   # None
+        >>> extract_field_from_line(None, 2)                   # None
     """
     if line is None:
         return None
 
-    fields = line.split()
+    fields = re.split(r"\s*,\s*|\s+", line.strip())
     if field_num < 1 or field_num > len(fields):
         return None
     return fields[field_num - 1]
@@ -100,20 +107,22 @@ def extract_column_from_line(line: str | None, column_pos: int) -> str | None:
 
     Similar to the shell command: ``cut -c<column>- | awk '{print $1}'``
     Extracts a substring from the specified column position to the end of the
-    line, then returns the first whitespace-separated token from that substring.
+    line, then returns the first token from that substring.  Tokens are
+    delimited by whitespace or commas (with optional surrounding whitespace).
 
     Args:
         line: Line content to extract token from, or None if line doesn't exist
         column_pos: 1-indexed character position to start extraction
 
     Returns:
-        First whitespace-separated token from the specified position,
+        First token from the specified position,
         empty string if no tokens found after column position,
         or None if line is None or column position is out of bounds
 
     Examples:
         >>> extract_column_from_line("  hello world test", 3)   # "hello"
         >>> extract_column_from_line("  hello world test", 9)   # "world"
+        >>> extract_column_from_line("  hello,world test", 3)   # "hello"
         >>> extract_column_from_line("short", 10)               # None
         >>> extract_column_from_line("   ", 1)                  # ""
         >>> extract_column_from_line(None, 3)                   # None
@@ -127,6 +136,6 @@ def extract_column_from_line(line: str | None, column_pos: int) -> str | None:
     # Extract substring from column position onwards
     substring = line[column_pos - 1 :].lstrip()
 
-    # Get first whitespace-separated token
-    tokens = substring.split()
+    # Get first token (delimited by whitespace or commas)
+    tokens = re.split(r"\s*,\s*|\s+", substring)
     return tokens[0] if tokens else ""
