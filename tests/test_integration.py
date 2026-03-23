@@ -1906,3 +1906,101 @@ Inputs:
         assert "value: -42.5000" in updated
         # Unprotected match updated (Force: 3.0000 from MOCK_DRIFTED_SCRIPT)
         assert "value: 3.0000" in updated
+
+    def test_protected_group_reference_not_updated(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """protected: true on a match group must protect all leaf matches inside it."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Protected group ref
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      results:
+        protected: true
+        energy:
+          file: results.txt
+          grep: "Energy:"
+          field: 2
+          value: -42.5000
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-r")
+
+        updated = yaml_file.read_text()
+        # Original value must stay unchanged because group is protected
+        assert "value: -42.5000" in updated
+
+    def test_protected_group_tolerance_not_updated(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """protected: true on a match group must prevent tol from being added to leaves."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Protected group tol
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      results:
+        protected: true
+        energy:
+          file: results.txt
+          grep: "Energy:"
+          field: 2
+          value: -42.5000
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-t")
+
+        updated = yaml_file.read_text()
+        assert "tol:" not in updated
+        assert "value: -42.5000" in updated
+
+    def test_protected_group_unprotected_sibling_updated(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """protected: true on one group must not affect sibling groups."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_text = """\
+Name: Protected group sibling
+Executable: mock.py
+Inputs:
+  input.txt:
+    Matches:
+      protected_results:
+        protected: true
+        energy:
+          file: results.txt
+          grep: "Energy:"
+          field: 2
+          value: -42.5000
+      unprotected_results:
+        force:
+          file: results.txt
+          grep: "Force:"
+          field: 2
+          value: 99.0000
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_text)
+
+        run_update(yaml_file, exec_dir, "-r")
+
+        updated = yaml_file.read_text()
+        # Protected group's leaf is untouched
+        assert "value: -42.5000" in updated
+        # Unprotected sibling group's leaf is updated
+        assert "value: 3.0000" in updated
