@@ -273,11 +273,11 @@ Returns the line at `offset` from the first line containing `pattern` as a subst
 
 ### `extract_field_from_line(line, field_num)`
 
-Splits `line` on whitespace and returns the element at `field_num - 1` (1-based, like `awk '{print $N}'`). Returns `None` for `None` input or out-of-range index.
+Splits `line` on whitespace sequences or commas (with optional surrounding whitespace) and returns the element at `field_num - 1` (1-based, like `awk '{print $N}'`). Two consecutive commas produce an empty string at the corresponding position. Returns `None` for `None` input or out-of-range index.
 
 ### `extract_column_from_line(line, column_pos)`
 
-Equivalent to `cut -c<column_pos>- | awk '{print $1}'`. Slices the line starting at `column_pos` (1-based), strips leading whitespace, and returns the first token. Returns `None` if `column_pos` exceeds line length; returns `""` if there are no tokens after that position.
+Equivalent to `cut -c<column_pos>- | awk '{print $1}'`. Slices the line starting at `column_pos` (1-based), strips leading whitespace, and returns the first token. Tokens are delimited by whitespace or commas (with optional surrounding whitespace). Returns `None` if `column_pos` exceeds line length; returns `""` if there are no tokens after that position.
 
 ## Execution internals
 

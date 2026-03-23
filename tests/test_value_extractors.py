@@ -36,6 +36,18 @@ class TestExtractFieldFromLine:
     def test_out_of_bounds(self):
         assert extract_field_from_line("one two", 5) is None
 
+    def test_comma_separated(self):
+        assert extract_field_from_line("first,second,third", 2) == "second"
+
+    def test_comma_with_spaces(self):
+        assert extract_field_from_line("first, second, third", 2) == "second"
+
+    def test_consecutive_commas_empty_field(self):
+        assert extract_field_from_line("a,,b", 2) == ""
+
+    def test_consecutive_commas_field_after_empty(self):
+        assert extract_field_from_line("a,,b", 3) == "b"
+
 
 class TestExtractColumnFromLine:
     def test_none_line(self):
@@ -43,3 +55,6 @@ class TestExtractColumnFromLine:
 
     def test_out_of_bounds(self):
         assert extract_column_from_line("short", 100) is None
+
+    def test_comma_ends_token(self):
+        assert extract_column_from_line("  hello,world test", 3) == "hello"
