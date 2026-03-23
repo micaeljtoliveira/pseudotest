@@ -301,7 +301,7 @@ Special float strings (`nan`, `inf`, `-inf`, `+inf`) are recognised as numeric.
 
 Fortran-style `D`/`d` exponent notation (e.g. `1.23D-04`) is normalised to `e` before parsing by `get_precision_from_string_format`.
 
-When `tol` is set and the effective precision implied by the string format of the calculated value is coarser than `tol`, a `WARNING` log is emitted. For example, a value printed as `1.234` has precision `0.001`; setting `tol: 1e-6` would trigger this warning because the output cannot distinguish differences smaller than `0.001`.
+When `tol` is set and the effective precision implied by the string format of the calculated value is coarser than `tol`, the match is **unconditionally failed**. For example, a value printed as `1.234` has precision `0.001`; setting `tol: 1e-6` fails because the output cannot distinguish differences smaller than `0.001`. The failure detail block prints only the offending tolerance and the effective precision (the usual calculated/reference/difference lines are suppressed), and suggests a minimum acceptable tolerance.
 
 ## Config updater internals
 

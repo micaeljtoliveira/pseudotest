@@ -58,6 +58,22 @@ class TestUpdateTolerance:
         param_set = {"value": 42.0}
         assert _update_tolerance(match_def, 0, 1, "42.0", param_set) is False
 
+    def test_zero_difference_tol_too_small_resets_to_zero(self):
+        """When tol < effective precision and difference is 0, tolerance is reset to 0.0."""
+        # "1.23" has precision 0.01; tol 1e-6 < 0.01 → too small → reset to 0.0
+        match_def = {"value": 1.23, "tol": 1e-6}
+        param_set = {"value": 1.23, "tol": 1e-6}
+        result = _update_tolerance(match_def, 0, 1, "1.23", param_set)
+        assert result is True
+        assert match_def["tol"] == 0.0
+
+    def test_zero_difference_tol_ok_returns_false(self):
+        """When tol >= effective precision and difference is 0, no update needed."""
+        # "1.23" has precision 0.01; tol 0.05 >= 0.01 → fine → no update
+        match_def = {"value": 1.23, "tol": 0.05}
+        param_set = {"value": 1.23, "tol": 0.05}
+        assert _update_tolerance(match_def, 0, 1, "1.23", param_set) is False
+
     def test_broadcast_scalar_tol_converted_to_list(self):
         """Existing scalar tol should be expanded to a list for broadcast."""
         match_def = {"value": [1.0, 2.0], "tol": 0.01}

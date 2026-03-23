@@ -1223,6 +1223,37 @@ class TestUpdateTolerance:
         tol = data["Inputs"]["input.txt"]["Matches"]["energy"]["tol"]
         assert tol >= 0.005
 
+    def test_update_tolerance_resets_tol_too_small_to_zero(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
+    ):
+        """When tol < precision and values match exactly, pseudotest-update -t resets tol to 0.0."""
+        make_executable(exec_dir, "mock.py", MOCK_DRIFTED_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Tol too small
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  energy:
+                    file: results.txt
+                    grep: "Energy:"
+                    field: 2
+                    value: -42.5050
+                    tol: 0.000001
+            """,
+        )
+        run_update(yaml_file, exec_dir, "-t")
+
+        from ruamel.yaml import YAML as _YAML
+
+        data = _YAML().load(yaml_file.open())
+        tol = data["Inputs"]["input.txt"]["Matches"]["energy"]["tol"]
+        assert tol == 0.0
+
     def test_update_tolerance_skips_passing_match(
         self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
     ):

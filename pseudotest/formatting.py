@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 INDENT_STEP = 2
-STATUS_COLUMN = 54
+STATUS_COLUMN = 58
 
 
 def indent(level: int) -> str:

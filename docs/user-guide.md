@@ -278,7 +278,7 @@ energy:
 
 Without `tol`, numeric values must match exactly (difference == 0). String values always require exact equality regardless of `tol`.
 
-If the specified `tol` is smaller than the effective precision implied by the format of the extracted value (e.g. `tol: 1e-8` for a value printed as `1.234`), a warning is emitted suggesting a larger tolerance.
+If the specified `tol` is smaller than the effective precision implied by the format of the extracted value (e.g. `tol: 1e-8` for a value printed as `1.234`), the match is treated as a **failure**. The detail block reports the offending tolerance and the effective precision, and suggests a minimum acceptable value. This catches configurations where the tolerance constraint is meaningless because the output cannot resolve differences that fine.
 
 ### File metadata match
 
@@ -524,9 +524,9 @@ This output can be useful as a CI artifact or for further processing.
 - Check that `field` or `column` index is within range for that line.
 - If the file is empty or missing, the match will always fail.
 
-### Tolerance warning
+### Tolerance too small
 
-A warning like *"Tolerance 1e-8 is smaller than the effective precision 1e-4"* means the printed value has fewer significant digits than the tolerance requires. Either reduce the tolerance or print more digits.
+A failure message like *"Tolerance 1e-8 is smaller than the effective precision 1e-4 of calculated value '1.2300'. Consider using tolerance >= 1.00e-04"* means the printed value has fewer significant digits than the tolerance requires. The match is unconditionally failed in this case. Either relax the tolerance to at least the suggested value, or configure the executable to print more significant digits.
 
 ### Timeout failures
 

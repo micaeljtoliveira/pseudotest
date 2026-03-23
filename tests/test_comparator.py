@@ -30,10 +30,16 @@ class TestIsNumber:
 
 class TestMatchCompareResult:
     def test_numeric_mismatch_with_tolerance_detail(self):
-        """Cover the tolerance-vs-precision warning path."""
-        # tolerance smaller than the effective precision => triggers warning
+        """Cover the tolerance-vs-precision error path."""
+        # tolerance smaller than the effective precision => triggers error
         result = match_compare_result("test_prec", "1.2345e+02", 123.46, tolerance=1e-6)
         assert result is False  # difference is ~0.01 > 1e-6
+
+    def test_tolerance_too_small_fails_even_when_values_appear_to_match(self):
+        """tolerance < effective precision must fail even if calculated == reference."""
+        # "1.23" has precision 0.01; tolerance 1e-6 < 0.01 => error
+        result = match_compare_result("too_tight", "1.23", 1.23, tolerance=1e-6)
+        assert result is False
 
     def test_numeric_match_near_zero_reference(self):
         """Cover the branch where |reference| <= 1e-10 (no deviation % printed)."""
