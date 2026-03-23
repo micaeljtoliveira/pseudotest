@@ -213,7 +213,12 @@ class PseudoTestRunner:
         if self.update_mode and self.config_modified:
             output_path = Path(update_output) if update_output else test_config_file
             save_config(test_config.data, output_path)
-            mode_desc = "tolerances" if self.update_mode == "tolerance" else "reference values"
+            if self.update_mode == "tolerance":
+                mode_desc = "tolerances"
+            elif self.update_mode == "reference_all":
+                mode_desc = "reference values (all)"
+            else:
+                mode_desc = "reference values"
             print(f"Updated {mode_desc} in {output_path}")
 
         return exit_code
