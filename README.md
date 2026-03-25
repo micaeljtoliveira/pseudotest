@@ -244,6 +244,66 @@ critical:
   protected: true   # pseudotest-update will never modify this match
 ```
 
+### Avoiding repetition with scopes
+
+Two scope mechanisms reduce duplication across a test config.
+
+**Execution scope** - `Executable`, `InputMethod`, and `RenameTo` set at the top level act as defaults for every input. Per-input blocks override them selectively:
+
+```yaml
+# Without top-level defaults (repetitive)
+Inputs:
+  case_01.in:
+    InputMethod: stdin
+    Matches: ...
+  case_02.in:
+    InputMethod: stdin
+    Matches: ...
+
+# With a top-level default
+InputMethod: stdin    # inherited by all inputs unless overridden
+Inputs:
+  case_01.in:
+    Matches: ...
+  case_02.in:
+    Matches: ...
+```
+
+**Match scope** - a named match group passes its parameters (such as `file:` and `tol:`) down to every child match, avoiding repetition when the same parameters are used for many checks. For example, checks that target the same file can be written in two ways:
+
+```yaml
+# Without grouping (repetitive)
+Matches:
+  energy:
+    file: results.txt
+    grep: "Energy:"
+    field: 2
+    value: -42.5
+    tol: 1e-4
+  force:
+    file: results.txt
+    grep: "Force:"
+    field: 2
+    value: -0.001
+    tol: 1e-4
+
+# With a match group
+Matches:
+  results:              # group — file: and tol: are inherited by all children
+    file: results.txt
+    tol: 1e-4
+    energy:
+      grep: "Energy:"
+      field: 2
+      value: -42.5
+    force:
+      grep: "Force:"
+      field: 2
+      value: -0.001
+```
+
+Groups can nest to any depth and share any match parameter (`file:`, `grep:`, `tol:`, `directory:`, etc.).
+
 ## MPI support
 
 Set `MPIEXEC` to your MPI launcher to enable parallel execution:
@@ -289,12 +349,9 @@ exit_code = runner.run(
 
 ## Documentation
 
-Detailed MkDocs-ready guides are in `docs/`:
+Full documentation is available at **https://micaeljtoliveira.github.io/pseudotest/**.
 
-- `docs/user-guide.md` — full feature reference with examples
-- `docs/developer-guide.md` — architecture, adding match types, internals
-
-Run locally:
+The MkDocs source lives in `docs/`. To build and serve locally:
 
 ```bash
 pip install -e .[docs]

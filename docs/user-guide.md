@@ -92,6 +92,132 @@ Top-level keys (`Executable`, `InputMethod`, `RenameTo`) act as defaults and can
 
 Paths in `ExtraFiles` are resolved relative to the directory containing the YAML test file. All files are copied flat into the temporary working directory before the executable runs.
 
+## Avoiding repetition
+
+Two scope mechanisms let you factor out shared settings so they don't have to be repeated for every input or every match.
+
+### Execution scope
+
+`Executable`, `InputMethod`, and `RenameTo` placed at the top level act as defaults for every input. Any per-input block can override them individually:
+
+```yaml
+# Without top-level defaults — InputMethod is repeated for every input
+Name: Solver tests
+Executable: solver.x
+Inputs:
+  case_01.in:
+    InputMethod: stdin
+    Matches: ...
+  case_02.in:
+    InputMethod: stdin
+    Matches: ...
+  case_03.in:
+    InputMethod: stdin
+    Matches: ...
+
+# With a top-level default — InputMethod is written once
+Name: Solver tests
+Executable: solver.x
+InputMethod: stdin      # inherited by all inputs
+Inputs:
+  case_01.in:
+    Matches: ...
+  case_02.in:
+    Matches: ...
+  case_03.in:
+    InputMethod: argument   # override for this input only
+    Matches: ...
+```
+
+Similarly for `RenameTo` when using `InputMethod: rename`, define it once at the top level and only override it in the rare input that needs a different name.
+
+### Match scope
+
+A named match can act as a **group** by containing child matches alongside shared parameters. Any recognised parameter placed directly in the group, such as `file:`, `grep:`, `tol:`, or `directory:`, is automatically inherited by every child match, so it only needs to be written once:
+
+```yaml
+# Without grouping — file: and tol: are repeated for every match
+Matches:
+  energy:
+    file: results.txt
+    grep: "Total energy:"
+    field: 3
+    value: -42.5000
+    tol: 1e-4
+  force_x:
+    file: results.txt
+    grep: "Force x:"
+    field: 2
+    value: -0.00123
+    tol: 1e-4
+  force_y:
+    file: results.txt
+    grep: "Force y:"
+    field: 2
+    value: 0.00045
+    tol: 1e-4
+
+# With a match group — file: and tol: are written once
+Matches:
+  results:              # group: shared parameters for all children
+    file: results.txt
+    tol: 1e-4
+    energy:
+      grep: "Total energy:"
+      field: 3
+      value: -42.5000
+    force_x:
+      grep: "Force x:"
+      field: 2
+      value: -0.00123
+    force_y:
+      grep: "Force y:"
+      field: 2
+      value: 0.00045
+```
+
+A child match can override an inherited parameter by defining it locally as the child's value takes precedence:
+
+```yaml
+Matches:
+  results:
+    file: results.txt
+    tol: 1e-4
+    energy:
+      grep: "Total energy:"
+      field: 3
+      value: -42.5000
+    checksum:
+      file: checksums.txt   # overrides the group's file:
+      grep: "SHA256:"
+      field: 2
+      value: abc123def456
+```
+
+Groups can nest to any depth. A deeply nested group inherits from all its ancestors:
+
+```yaml
+Matches:
+  results:
+    file: results.txt
+    energies:
+      tol: 1e-6        # tighter tolerance for the energies sub-group
+      total:
+        grep: "Total energy:"
+        field: 3
+        value: -42.5000
+      exchange:
+        grep: "Exchange:"
+        field: 2
+        value: -3.1416
+    forces:
+      tol: 1e-4        # looser tolerance for forces
+      atom_1:
+        grep: "Atom 1:"
+        field: 2
+        value: -0.00123
+```
+
 ## Complete example
 
 This example covers the most common match types in a single config:
