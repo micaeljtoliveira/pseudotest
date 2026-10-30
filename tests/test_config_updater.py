@@ -73,6 +73,13 @@ class TestUpdateTolerance:
         assert result is True
         assert match_def["tol"] == 0.0
 
+    def test_zero_difference_scientific_zero_keeps_tolerance(self):
+        """A zero in scientific notation is exact, so a tolerance below 1e-8 is not reset."""
+        match_def = {"value": 0.0, "tol": 4.7e-22}
+        param_set = {"value": 0.0, "tol": 4.7e-22}
+        assert _update_tolerance(match_def, 0, 1, "0.00000000E+000", param_set) is False
+        assert match_def["tol"] == 4.7e-22
+
     def test_zero_difference_tol_ok_returns_false(self):
         """When tol >= effective precision and difference is 0, no update needed."""
         # "1.23" has precision 0.01; tol 0.05 >= 0.01 → fine → no update

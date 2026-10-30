@@ -303,6 +303,8 @@ Fortran-style `D`/`d` exponent notation (e.g. `1.23D-04`) is normalised to `e` b
 
 When `tol` is set and the effective precision implied by the string format of the calculated value is coarser than `tol`, the match is **unconditionally failed**. For example, a value printed as `1.234` has precision `0.001`; setting `tol: 1e-6` fails because the output cannot distinguish differences smaller than `0.001`. The failure detail block prints only the offending tolerance and the effective precision (the usual calculated/reference/difference lines are suppressed), and suggests a minimum acceptable tolerance.
 
+A zero written in scientific notation (e.g. `0.00000000E+000`) has precision `0.0`: every non-zero value is written with its own exponent, so the zero is exact and any tolerance is accepted for it. Without this, a match that is exactly zero with one compiler and a rounding residue such as `4.2E-22` with another could not pass on both, and the tolerance update jobs would undo each other.
+
 ## Config updater internals
 
 `apply_match_updates(match_def, results, total, mode)` iterates over broadcast results and patches the raw ruamel.yaml dict in-place:
