@@ -86,21 +86,44 @@ def _cast_to_reference_type(value_str: str, reference: Any) -> Any:
 def _make_scalar_float(value: float, template: ScalarFloat) -> ScalarFloat:
     """Create a ``ScalarFloat`` with *value* inheriting format from *template*.
 
-    The number of decimal places is preserved from *template*.  The
-    ``_prec`` (characters before the decimal, including sign) and
-    ``_width`` (total string length) are recomputed so the new number
-    renders correctly regardless of how many integer digits it has.
+    The sign follows *value*; an explicit ``+`` in *template* is kept for
+    non-negative values.  A template in scientific notation keeps its
+    exponent style and the width of its mantissa, which is written with one
+    digit before the decimal (``0.00000000E+09`` becomes ``1.40343322E-16``),
+    so no significant digit is lost.  Otherwise the number of decimal places is
+    preserved from *template*, and the ``_prec`` (characters before the
+    decimal, including sign) and ``_width`` (total string length) are
+    recomputed so the new number renders correctly regardless of how many
+    integer digits it has.
     """
     t_prec = getattr(template, "_prec", 0)
     t_width = getattr(template, "_width", 0)
+    t_sign = getattr(template, "_m_sign", False)
     m_lead0 = getattr(template, "_m_lead0", 0)
+    m_sign = "-" if value < 0 else ("+" if t_sign == "+" else False)
+
+    if getattr(template, "_exp", None):
+        # ruamel.yaml counts the sign in the mantissa's _prec but not in its
+        # _width, so only _prec changes when the sign does.  Leading zeros in
+        # the mantissa would cost digits (and break negative values).
+        new_prec = t_prec - bool(t_sign) + bool(m_sign) if t_prec > 0 else t_prec
+        return ScalarFloat(
+            value,
+            width=t_width,
+            prec=new_prec,
+            m_sign=m_sign,
+            m_lead0=0,
+            exp=template._exp,
+            e_width=template._e_width,
+            e_sign=template._e_sign,
+        )
 
     # decimal_places = characters after '.' in the template representation
     decimal_places = t_width - t_prec - 1  # subtract chars-before-dot and dot
 
     # New prec = characters before the decimal point in the new value
     int_part = str(int(abs(value))) if abs(value) >= 1 else "0"
-    new_prec = len(int_part) + (1 if value < 0 else 0)
+    new_prec = len(int_part) + (1 if m_sign else 0)
 
     new_width = new_prec + 1 + decimal_places  # prec + dot + decimals
 
@@ -108,7 +131,7 @@ def _make_scalar_float(value: float, template: ScalarFloat) -> ScalarFloat:
         value,
         width=new_width,
         prec=new_prec,
-        m_sign="-" if value < 0 else getattr(template, "_m_sign", False),
+        m_sign=m_sign,
         m_lead0=m_lead0,
     )
 

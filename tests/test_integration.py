@@ -1118,6 +1118,17 @@ with open("results.txt", "w") as f:
 sys.exit(0)
 """
 
+# Mock that prints a value in scientific notation
+MOCK_SCIENTIFIC_SCRIPT = """\
+#!/usr/bin/env python3
+\"\"\"Mock executable that prints a value smaller than one in scientific notation.\"\"\"
+import sys
+
+with open("results.txt", "w") as f:
+    f.write("Wavefunction: 1.25568286E-01\\n")
+sys.exit(0)
+"""
+
 
 class TestUpdateTolerance:
     """Tests for pseudotest-update --tolerance."""
@@ -1347,6 +1358,35 @@ class TestUpdateReference:
 
         data = _YAML().load(yaml_file.open())
         assert float(data["Inputs"]["input.txt"]["Matches"]["energy"]["value"]) == pytest.approx(-42.505)
+
+    def test_update_reference_keeps_scientific_notation(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, run_update
+    ):
+        """A reference in scientific notation is updated without losing digits."""
+        make_executable(exec_dir, "mock.py", MOCK_SCIENTIFIC_SCRIPT)
+        make_input(tmp_path)
+
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Scientific notation
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  wavefunction:
+                    file: results.txt
+                    grep: "Wavefunction:"
+                    field: 2
+                    value: 1.25568282E-01
+                    tol: 3.3e-09
+            """,
+        )
+        rc = run_update(yaml_file, exec_dir, "-r")
+        assert rc == ExitCode.TEST_FAILURE
+
+        assert "value: 1.25568286E-01" in yaml_file.read_text()
+        assert run_pseudotest(yaml_file, exec_dir) == ExitCode.OK
 
     def test_update_reference_preserves_tolerance(
         self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_update
