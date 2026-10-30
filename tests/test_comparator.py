@@ -4,6 +4,7 @@ from pseudotest.comparator import (
     get_precision_from_string_format,
     is_number,
     match_compare_result,
+    parse_number,
 )
 
 # ---------------------------------------------------------------------------
@@ -75,9 +76,8 @@ class TestGetPrecision:
         assert abs(p - 1000.0) < 1e-6
 
     def test_fortran_d_notation(self):
-        # Python's float() cannot parse Fortran D notation, so it returns 0.0
         p = get_precision_from_string_format("1.5D+01")
-        assert p == 0.0
+        assert abs(p - 1.0) < 1e-12  # 0.1 * 10 = 1.0
 
     def test_integer_precision(self):
         p = get_precision_from_string_format("42")
@@ -110,3 +110,54 @@ class TestStringComparison:
     def test_string_match(self):
         result = match_compare_result("status", "converged", "converged")
         assert result is True
+
+
+# ---------------------------------------------------------------------------
+# Number parsing and special values
+# ---------------------------------------------------------------------------
+
+
+class TestParseNumber:
+    def test_fortran_exponent(self):
+        assert parse_number("1.5D+00") == 1.5
+        assert parse_number("-2.5d-01") == -0.25
+        assert is_number("1.5D+00") is True
+
+    def test_not_a_number(self):
+        assert parse_number("D") is None
+        assert parse_number("***") is None
+        assert parse_number(None) is None
+
+
+class TestSpecialValues:
+    def test_fortran_exponent_matches_float_reference(self):
+        assert match_compare_result("fort", "1.5D+00", 1.5) is True
+
+    def test_equal_infinities_match(self):
+        assert match_compare_result("inf", "inf", float("inf")) is True
+        assert match_compare_result("inf", "-Infinity", float("-inf")) is True
+
+    def test_opposite_infinities_do_not_match(self):
+        assert match_compare_result("inf", "-inf", float("inf")) is False
+
+    def test_infinity_is_exact_with_tolerance(self):
+        assert get_precision_from_string_format("inf") == 0.0
+        assert match_compare_result("inf", "inf", float("inf"), tolerance=1e-6) is True
+
+    def test_nan_matches_nan_only(self):
+        assert match_compare_result("nan", "NaN", float("nan")) is True
+        assert match_compare_result("nan", "NaN", 1.0) is False
+
+
+class TestFailureDetails:
+    def test_tolerance_too_small_details_on_separate_lines(self, capsys):
+        match_compare_result("too_tight", "1.23", 1.23, tolerance=1e-6)
+        lines = [line.strip() for line in capsys.readouterr().out.splitlines()]
+        assert any(line.startswith("Unreliable comparison") for line in lines)
+        assert "Calculated value    : 1.23" in lines
+        assert "Effective precision : 0.01" in lines
+        assert "Tolerance           : 1e-06" in lines
+        assert any("at least 0.01" in line for line in lines)
+
+    def test_precision_has_no_rounding_noise(self):
+        assert get_precision_from_string_format("-1.40343322E-16") == 1e-24

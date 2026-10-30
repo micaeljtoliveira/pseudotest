@@ -12,25 +12,9 @@ from collections import ChainMap
 from pathlib import Path
 from typing import Any
 
+from pseudotest.config_updater import cast_like
 from pseudotest.matchers import INTERNAL_KEYS, REFERENCE_KEYS, RESERVED_KEYS
 from pseudotest.test_config import yaml
-
-
-def _cast_to_type(value: str | None, target_type: type) -> Any:
-    """Cast a string value to *target_type*, falling back to the original string."""
-    if value is None:
-        return None
-    # Map ruamel.yaml scalar types to Python builtins
-    _builtin_map: dict[str, type] = {
-        "ScalarFloat": float,
-        "ScalarInt": int,
-        "ScalarBoolean": bool,
-    }
-    cast_type = _builtin_map.get(target_type.__name__, target_type)
-    try:
-        return cast_type(value)
-    except (ValueError, TypeError):
-        return value
 
 
 class ReportWriter:
@@ -52,7 +36,7 @@ class ReportWriter:
         for key in RESERVED_KEYS:
             if key in params and key not in INTERNAL_KEYS:
                 if key in REFERENCE_KEYS:
-                    entry[key] = _cast_to_type(calculated_value, type(params[key]))
+                    entry[key] = cast_like(calculated_value, params[key])
                     entry["reference"] = params[key]
                 else:
                     entry[key] = params[key]
@@ -89,7 +73,7 @@ class ReportWriter:
             test_config_data: Parsed top-level test configuration dict.
             report_inputs: Per-input result dicts keyed by input filename.
         """
-        test_file_key = test_file_path.lstrip("./") if test_file_path.startswith("./") else test_file_path
+        test_file_key = test_file_path.removeprefix("./")
         report = {
             test_file_key: {
                 "Name": test_config_data["Name"],
@@ -98,13 +82,8 @@ class ReportWriter:
                 "Inputs": report_inputs,
             }
         }
-        path = Path(report_file)
-        if path.exists():
-            with path.open("a") as f:
-                f.write("---\n")
-                yaml.dump(report, f)
-        else:
-            with path.open("w") as f:
-                f.write("---\n")
-                yaml.dump(report, f)
+        # Each run appends its own document to the report
+        with Path(report_file).open("a") as f:
+            f.write("---\n")
+            yaml.dump(report, f)
         logging.info(f"Report written to {report_file}")

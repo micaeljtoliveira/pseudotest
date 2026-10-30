@@ -12,11 +12,15 @@ The tests then call ``pseudotest.runner.main()`` directly so that
 from __future__ import annotations
 
 import os
+import re
+import tempfile
 from unittest.mock import patch
 
 import pytest
 
 from pseudotest.exceptions import ExitCode
+from pseudotest.runner import PseudoTestRunner
+from pseudotest.test_config import yaml
 
 # ---------------------------------------------------------------------------
 # Mock executable scripts
@@ -2208,3 +2212,288 @@ Inputs:
         assert "value: -42.5000" in updated
         # Unprotected sibling group's leaf is updated
         assert "value: 3.0000" in updated
+
+
+# ---------------------------------------------------------------------------
+# Configuration errors
+# ---------------------------------------------------------------------------
+
+
+class TestConfigErrors:
+    """Mistakes in the test file are usage errors, reported in one line, without leaving a working directory."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, tmp_path, exec_dir, make_executable, make_input, monkeypatch):
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_input(tmp_path)
+        # Keep the working directories where they can be counted
+        self.work_root = tmp_path / "work_root"
+        self.work_root.mkdir()
+        monkeypatch.setattr(tempfile, "tempdir", str(self.work_root))
+
+    @pytest.mark.parametrize(
+        ("matches", "message"),
+        [
+            # A typo in a parameter name used to turn the match into a group
+            (
+                "energy: {fiel: results.txt, grep: 'Energy:', field: 2, value: -42.5}",
+                "Unknown match parameter 'fiel' in 'Inputs > input.txt > Matches > energy'",
+            ),
+            # 'matches' is not the key naming broadcast elements
+            (
+                "multi: {matches: [a, b], file: results.txt, line: [1, 2], field: 2, value: [1, 2]}",
+                "Unknown match parameter 'matches'",
+            ),
+            ("energy: {grep: 'Energy:', field: 2, value: -42.5}", "requires a 'file' or 'directory' parameter"),
+            ("energy:", "Match 'Inputs > input.txt > Matches > energy' has no parameters"),
+            # A typo in a parameter of a group
+            (
+                "results: {fiel: results.txt, energy: {grep: 'Energy:', field: 2, value: -42.5}}",
+                "Unknown match parameter 'fiel' in 'Inputs > input.txt > Matches > results'",
+            ),
+            # A match named after a parameter used to be passed down as a parameter
+            (
+                "count: {directory: output_dir, count_files: 2}",
+                "Match 'Inputs > input.txt > Matches > count' is named after a match parameter",
+            ),
+        ],
+    )
+    def test_invalid_match(self, tmp_path, exec_dir, make_yaml, run_pseudotest, caplog, matches, message):
+        yaml_file = make_yaml(
+            tmp_path,
+            f"""\
+            Name: Invalid match
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  {matches}
+            """,
+        )
+        assert run_pseudotest(yaml_file, exec_dir) == ExitCode.USAGE
+        assert message in caplog.text
+        assert list(self.work_root.iterdir()) == []
+
+    @pytest.mark.parametrize(
+        ("inputs", "message"),
+        [
+            ("input.txt:\n    ExtraFiles: [missing.dat]", "Extra file not found"),
+            ("missing.txt: {}", "Input file not found"),
+            ("input.txt:\n    Executable: missing.py", "Executable 'missing.py' not available"),
+        ],
+    )
+    def test_missing_file(self, tmp_path, exec_dir, make_yaml, run_pseudotest, caplog, inputs, message):
+        yaml_file = make_yaml(tmp_path, "Name: Missing file\nExecutable: mock.py\nInputs:\n  " + inputs + "\n")
+        assert run_pseudotest(yaml_file, exec_dir) == ExitCode.USAGE
+        assert message in caplog.text
+        assert list(self.work_root.iterdir()) == []
+
+    def test_matches_not_a_mapping(self, tmp_path, exec_dir, make_yaml, run_pseudotest, caplog):
+        yaml_file = make_yaml(
+            tmp_path, "Name: Matches list\nExecutable: mock.py\nInputs:\n  input.txt:\n    Matches: [energy]\n"
+        )
+        assert run_pseudotest(yaml_file, exec_dir) == ExitCode.USAGE
+        assert "'Matches' of input 'input.txt' must be a mapping of matches" in caplog.text
+        assert list(self.work_root.iterdir()) == []
+
+    def test_missing_test_file(self, tmp_path, exec_dir, run_pseudotest, caplog):
+        assert run_pseudotest(tmp_path / "missing.yaml", exec_dir) == ExitCode.USAGE
+        assert "Test file not found" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Execution and match behaviour fixed after the code review
+# ---------------------------------------------------------------------------
+
+MOCK_ARGUMENT_READER_SCRIPT = """\
+#!/usr/bin/env python3
+\"\"\"Mock executable that fails unless it can read the input file given as argument.\"\"\"
+import sys
+
+open(sys.argv[1]).read()
+with open("results.txt", "w") as f:
+    f.write("read_ok 1\\n")
+sys.exit(0)
+"""
+
+
+class TestRunBehaviour:
+    def test_input_without_parameters(self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest):
+        """An input written as 'input.txt:' just runs with the top-level parameters."""
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_input(tmp_path)
+        yaml_file = make_yaml(tmp_path, "Name: No params\nExecutable: mock.py\nInputs:\n  input.txt:\n")
+        assert run_pseudotest(yaml_file, exec_dir) == ExitCode.OK
+
+    def test_input_in_subdirectory(self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest):
+        make_executable(exec_dir, "reader.py", MOCK_ARGUMENT_READER_SCRIPT)
+        (tmp_path / "inputs").mkdir()
+        make_input(tmp_path / "inputs", "case.in")
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Input in subdirectory
+            Executable: reader.py
+            Inputs:
+              inputs/case.in:
+                Matches:
+                  ok: {file: results.txt, line: 1, field: 2, value: 1}
+            """,
+        )
+        assert run_pseudotest(yaml_file, exec_dir) == ExitCode.OK
+
+    def test_timeout_is_reported(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, capsys
+    ):
+        make_executable(exec_dir, "slow.py", MOCK_SLOW_SCRIPT)
+        make_input(tmp_path)
+        yaml_file = make_yaml(tmp_path, "Name: Timeout\nExecutable: slow.py\nInputs:\n  input.txt: {}\n")
+        assert run_pseudotest(yaml_file, exec_dir, extra_args=["-t", "1"]) == ExitCode.TEST_FAILURE
+        assert "input.txt: timed out after 1 s" in capsys.readouterr().out
+
+    def test_extraction_failure_is_reported(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, capsys
+    ):
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_input(tmp_path)
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Extraction failure
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  missing_pattern: {file: results.txt, grep: "Not there", field: 2, value: 1}
+            """,
+        )
+        assert run_pseudotest(yaml_file, exec_dir) == ExitCode.TEST_FAILURE
+        out = capsys.readouterr().out
+        assert re.search(r"missing_pattern +\[FAIL\]", out)
+        assert "No value found in 'results.txt'" in out
+
+    def test_broadcast_elements_named_by_index(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, capsys
+    ):
+        """Without a 'match' list, each broadcast element gets its own name in the output and the report."""
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_input(tmp_path)
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Broadcast names
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  multi: {file: results.txt, grep: ["Energy:", "Iterations"], field: 2, value: [-42.5, 10]}
+            """,
+        )
+        report_path = tmp_path / "report.yaml"
+        assert run_pseudotest(yaml_file, exec_dir, extra_args=["-r", str(report_path)]) == ExitCode.OK
+        out = capsys.readouterr().out
+        assert "multi[0]" in out
+        assert "multi[1]" in out
+        report = yaml.load(report_path)
+        matches = report[str(yaml_file)]["Inputs"]["input.txt"]["Matches"]
+        assert list(matches) == ["multi[0]", "multi[1]"]
+        assert matches["multi[1]"]["value"] == 10
+
+    def test_disabled_test_written_to_report(self, tmp_path, exec_dir, make_yaml, run_pseudotest):
+        yaml_file = make_yaml(
+            tmp_path, "Name: Disabled\nEnabled: false\nExecutable: mock.py\nInputs:\n  input.txt: {}\n"
+        )
+        report_path = tmp_path / "report.yaml"
+        assert run_pseudotest(yaml_file, exec_dir, extra_args=["-r", str(report_path)]) == ExitCode.OK
+        report = yaml.load(report_path)[str(yaml_file)]
+        assert report["Enabled"] is False
+        assert report["Inputs"] == {}
+
+    def test_runner_reuse_resets_counters(self, tmp_path, exec_dir, make_executable, make_input, make_yaml, capsys):
+        make_executable(exec_dir, "mock.py", MOCK_CREATOR_SCRIPT)
+        make_input(tmp_path)
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Reuse
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  wrong: {file: results.txt, grep: "Energy:", field: 2, value: 1}
+            """,
+        )
+        runner = PseudoTestRunner()
+        runner.run(str(yaml_file), str(exec_dir), False, 60)
+        runner.run(str(yaml_file), str(exec_dir), False, 60)
+        assert runner.failed_matches == 1
+        assert runner.total_matches == 1
+
+
+# ---------------------------------------------------------------------------
+# Config updates fixed after the code review
+# ---------------------------------------------------------------------------
+
+MOCK_UNUSUAL_VALUES_SCRIPT = """\
+#!/usr/bin/env python3
+\"\"\"Mock executable printing a Fortran overflow, a boolean, and a value with few digits.\"\"\"
+import sys
+
+with open("results.txt", "w") as f:
+    f.write("Overflow: ***\\n")
+    f.write("Converged: false\\n")
+    f.write("Short: 1.23\\n")
+sys.exit(0)
+"""
+
+
+class TestUpdateRobustness:
+    @pytest.fixture(autouse=True)
+    def _setup(self, tmp_path, exec_dir, make_executable, make_input):
+        make_executable(exec_dir, "mock.py", MOCK_UNUSUAL_VALUES_SCRIPT)
+        make_input(tmp_path)
+
+    def _config(self, make_yaml, tmp_path, match):
+        return make_yaml(
+            tmp_path,
+            f"""\
+            Name: Update robustness
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  {match}
+            """,
+        )
+
+    @pytest.mark.parametrize(
+        "match",
+        [
+            # A numeric reference is not replaced by a Fortran overflow
+            "overflow: {file: results.txt, grep: 'Overflow:', field: 2, value: 1.5}",
+            # A missing directory has no file count to use as reference
+            "file_count: {directory: missing_dir, count_files: 3}",
+        ],
+    )
+    def test_reference_not_replaced(self, tmp_path, exec_dir, make_yaml, run_update, match):
+        yaml_file = self._config(make_yaml, tmp_path, match)
+        original = yaml_file.read_text()
+        assert run_update(yaml_file, exec_dir, "-r") == ExitCode.TEST_FAILURE
+        assert yaml_file.read_text() == original
+
+    def test_bool_reference_updated(self, tmp_path, exec_dir, make_yaml, run_pseudotest, run_update):
+        yaml_file = self._config(
+            make_yaml, tmp_path, "flag: {file: results.txt, grep: 'Converged:', field: 2, value: true}"
+        )
+        assert run_update(yaml_file, exec_dir, "-r") == ExitCode.TEST_FAILURE
+        assert "value: false" in yaml_file.read_text()
+
+    def test_tolerance_update_respects_output_precision(
+        self, tmp_path, exec_dir, make_yaml, run_pseudotest, run_update
+    ):
+        """The reference has more digits than the output, so the tolerance must cover the output precision."""
+        yaml_file = self._config(
+            make_yaml, tmp_path, "short: {file: results.txt, grep: 'Short:', field: 2, value: 1.225}"
+        )
+        assert run_update(yaml_file, exec_dir, "-t") == ExitCode.TEST_FAILURE
+        assert run_pseudotest(yaml_file, exec_dir) == ExitCode.OK

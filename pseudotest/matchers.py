@@ -15,6 +15,7 @@ from typing import Any
 
 from pseudotest.comparator import match_compare_result
 from pseudotest.exceptions import UsageError
+from pseudotest.formatting import display_failure_details, display_match_status
 from pseudotest.value_extractors import (
     extract_column_from_line,
     extract_field_from_line,
@@ -102,23 +103,23 @@ def handle_directory_matches(dirpath: Path, params: ChainMap[str, Any]) -> tuple
         UsageError: If neither 'file_is_present' nor 'count_files' is provided,
                    or if 'file_is_present' parameter is not a string
     """
-    if not dirpath.is_dir():
-        calculated_value = "False"
-        reference_value = "True"
-
-    elif "file_is_present" in params:
+    if "file_is_present" in params:
         filename = params["file_is_present"]
         if not isinstance(filename, str):
             raise UsageError("file_is_present parameter must be a string")
 
+        # A file inside a missing directory is not present either
         file_path = dirpath / filename
         calculated_value = "False" if not file_path.is_file() else "True"
         reference_value = "True"
 
     elif "count_files" in params:
+        reference_value = params["count_files"]
+        if not dirpath.is_dir():
+            # Nothing to count: this is an extraction failure, not a count of zero
+            return None, reference_value
         file_count = sum(1 for item in dirpath.iterdir() if item.is_file())
         calculated_value = str(file_count)
-        reference_value = params["count_files"]
 
     else:
         raise UsageError("Directory parameter requires either 'file_is_present' or 'count_files'")
@@ -146,6 +147,21 @@ def handle_file_matches(filepath: Path, params: ChainMap[str, Any]) -> tuple[str
     return calculated_value, reference_value
 
 
+def _select_line(lines: list[str], params: ChainMap[str, Any]) -> str | None:
+    """Return the line selected by the 'grep' and 'line' parameters, or None if it does not exist."""
+    if "grep" in params:
+        # With grep, 'line' is an offset from the first line containing the pattern
+        offset = params.get("line", 0)
+        return find_pattern_line(lines, params["grep"], offset)
+    if "line" in params:
+        # 1-based from the start, or counted from the end when negative (-1 = last line)
+        line_num = params["line"]
+        if line_num == 0:
+            raise UsageError("'line' is 1-based: use a positive number, or a negative one to count from the end")
+        return get_target_line(lines, line_num - 1 if line_num > 0 else line_num)
+    raise UsageError("Content-based match requires either 'grep' or 'line' parameter")
+
+
 def handle_content_matches(lines: list[str], params: ChainMap[str, Any]) -> tuple[str | None, Any]:
     """Handle content-based matches and return calculated and reference values.
 
@@ -168,14 +184,7 @@ def handle_content_matches(lines: list[str], params: ChainMap[str, Any]) -> tupl
         calculated_value = str(sum(1 for line in lines if params["grep"] in line))
         return calculated_value, params["count"]
 
-    # Get line content based on grep or line parameters
-    if "grep" in params:
-        offset = params.get("line", 0)
-        line = find_pattern_line(lines, params["grep"], offset)
-    elif "line" in params:
-        line = get_target_line(lines, params["line"] - 1)
-    else:
-        raise UsageError("Content-based match requires either 'grep' or 'line' parameter")
+    line = _select_line(lines, params)
 
     # Extract the value based on field, column, or field_re/field_im
     if "field" in params:
@@ -277,7 +286,10 @@ def match(name: str, params: ChainMap[str, Any], work_dir: Path, indent_level: i
         Tuple of (success, calculated_value).
     """
     # Determine the target path — directory parameter takes precedence over file
-    filepath = work_dir / params["directory"] if "directory" in params else work_dir / params["file"]
+    target = params.get("directory", params.get("file"))
+    if target is None:
+        raise UsageError(f"Match '{name}' requires a 'file' or 'directory' parameter")
+    filepath = work_dir / target
 
     # Route to the first registered handler whose predicate matches
     for predicate, handler in _MATCH_HANDLERS:
@@ -289,6 +301,12 @@ def match(name: str, params: ChainMap[str, Any], work_dir: Path, indent_level: i
 
     # Check if calculation succeeded
     if calculated_value is None:
+        display_match_status(name, False, indent_level)
+        if filepath.exists():
+            reason = f"No value found in '{target}' (pattern not found, or line/field/column out of range)"
+        else:
+            reason = f"'{target}' not found"
+        display_failure_details([reason], indent_level)
         return False, None
 
     # Perform comparison and return result

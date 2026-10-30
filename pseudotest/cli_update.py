@@ -14,12 +14,9 @@ The updated config is written back to the original file unless
 """
 
 import argparse
-import logging
 import sys
-import traceback
 
-from pseudotest.cli_run import setup_logging
-from pseudotest.exceptions import CliError, ExitCode
+from pseudotest.cli_run import handle_errors, setup_logging
 from pseudotest.runner import PseudoTestRunner
 
 
@@ -90,24 +87,18 @@ def main(command_line_args: list[str] | None = None) -> int:
 
     setup_logging(parsed_args.verbose)
     test_runner = PseudoTestRunner()
-    return test_runner.run(
-        parsed_args.test_file,
-        parsed_args.directory,
-        preserve_workdir=False,
-        timeout=parsed_args.timeout,
-        update_mode=parsed_args.update_mode,
-        update_output=parsed_args.output,
+    return handle_errors(
+        lambda: test_runner.run(
+            parsed_args.test_file,
+            parsed_args.directory,
+            preserve_workdir=False,
+            timeout=parsed_args.timeout,
+            update_mode=parsed_args.update_mode,
+            update_output=parsed_args.output,
+        ),
+        parsed_args.verbose,
     )
 
 
 if __name__ == "__main__":  # pragma: no cover
-    try:
-        sys.exit(main())
-    except CliError as e:
-        logging.error(e)
-        sys.exit(e.exit_code)
-    except Exception:
-        logging.error("internal error (use --vv for traceback)")
-        if "--vv" in sys.argv:
-            traceback.print_exc()
-        sys.exit(ExitCode.INTERNAL)
+    sys.exit(main())
