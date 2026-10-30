@@ -2246,6 +2246,11 @@ class TestConfigErrors:
             ),
             ("energy: {grep: 'Energy:', field: 2, value: -42.5}", "requires a 'file' or 'directory' parameter"),
             ("energy:", "Match 'Inputs > input.txt > Matches > energy' has no parameters"),
+            # A typo in a parameter of a group
+            (
+                "results: {fiel: results.txt, energy: {grep: 'Energy:', field: 2, value: -42.5}}",
+                "Unknown match parameter 'fiel' in 'Inputs > input.txt > Matches > results'",
+            ),
             # A match named after a parameter used to be passed down as a parameter
             (
                 "count: {directory: output_dir, count_files: 2}",
@@ -2281,6 +2286,14 @@ class TestConfigErrors:
         yaml_file = make_yaml(tmp_path, "Name: Missing file\nExecutable: mock.py\nInputs:\n  " + inputs + "\n")
         assert run_pseudotest(yaml_file, exec_dir) == ExitCode.USAGE
         assert message in caplog.text
+        assert list(self.work_root.iterdir()) == []
+
+    def test_matches_not_a_mapping(self, tmp_path, exec_dir, make_yaml, run_pseudotest, caplog):
+        yaml_file = make_yaml(
+            tmp_path, "Name: Matches list\nExecutable: mock.py\nInputs:\n  input.txt:\n    Matches: [energy]\n"
+        )
+        assert run_pseudotest(yaml_file, exec_dir) == ExitCode.USAGE
+        assert "'Matches' of input 'input.txt' must be a mapping of matches" in caplog.text
         assert list(self.work_root.iterdir()) == []
 
     def test_missing_test_file(self, tmp_path, exec_dir, run_pseudotest, caplog):

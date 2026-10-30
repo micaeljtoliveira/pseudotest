@@ -7,6 +7,7 @@ import pytest
 from pseudotest.config_updater import (
     _update_reference,
     _update_tolerance,
+    apply_match_updates,
     cast_like,
     compute_tolerance,
     save_config,
@@ -198,3 +199,12 @@ class TestUpdateToleranceLimits:
         assert _update_tolerance(match_def, 0, 1, "inf", {"value": 1.5}) is False
         assert "tol" not in match_def
         assert "No tolerance can cover" in caplog.text
+
+
+class TestApplyMatchUpdates:
+    def test_protected_match_not_updated(self):
+        """apply_match_updates honours 'protected' when called directly, not only through the runner."""
+        match_def = {"value": 1.0, "protected": True}
+        results = [(0, False, "2.0", {"value": 1.0, "protected": True})]
+        assert apply_match_updates(match_def, results, 1, "reference") is False
+        assert match_def["value"] == 1.0
