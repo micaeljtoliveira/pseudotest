@@ -56,6 +56,21 @@ def display_match_status(match_name: str, success: bool, indent_level: int = 2) 
     print(f"{prefix}{match_name:<{name_width}} {status_text}")
 
 
+def display_failure_details(lines: list[str], indent_level: int = 2) -> None:
+    """Display the details of a failed match between two separators.
+
+    Args:
+        lines: Detail lines to display
+        indent_level: Nesting level of the match whose details are displayed
+    """
+    prefix = indent(indent_level + 1)
+    separator = f"{prefix}" + "-" * 45
+    print(separator)
+    for line in lines:
+        print(f"{prefix}{line}")
+    print(separator)
+
+
 class OutputFormatter:
     """Formats and prints execution output (stdout/stderr) from test runs.
 
@@ -66,6 +81,15 @@ class OutputFormatter:
 
     def __init__(self, colors: Colors | None = None):
         self.colors = colors or Colors()
+
+    def print_execution_error(self, input_file: str, message: str) -> None:
+        """Print why the execution of *input_file* did not complete.
+
+        Args:
+            input_file: Name of the input file for context
+            message: Reason of the failure, e.g. a timeout
+        """
+        print(f"\n{self.colors.RED}=== {input_file}: {message} ==={self.colors.RESET}")
 
     def print_execution_output(self, temp_dir: Path, input_file: str) -> None:
         """Print stdout and stderr output from a failed execution.

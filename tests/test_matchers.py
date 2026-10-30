@@ -223,3 +223,57 @@ class TestMatchDispatch:
         params = ChainMap({"file": "data.bin", "size": 50})
         success, calc = match("sz", params, tmp_path)
         assert success is True
+
+
+# ---------------------------------------------------------------------------
+# line indexing
+# ---------------------------------------------------------------------------
+
+
+class TestLineIndexing:
+    def test_negative_line_counts_from_end(self):
+        """line: -1 is the last line, so line: -3 is the third line from the end."""
+        params = ChainMap({"line": -3, "field": 2, "value": 10})
+        calc, _ = handle_content_matches(SAMPLE_LINES, params)
+        assert calc == "10"
+
+    def test_line_zero_raises(self):
+        params = ChainMap({"line": 0, "field": 1, "value": "x"})
+        with pytest.raises(UsageError, match="1-based"):
+            handle_content_matches(SAMPLE_LINES, params)
+
+
+# ---------------------------------------------------------------------------
+# match() failures
+# ---------------------------------------------------------------------------
+
+
+class TestMatchFailures:
+    def test_count_files_missing_directory_is_extraction_failure(self, tmp_path):
+        """A missing directory has no file count, rather than a count of 'False'."""
+        calc, ref = handle_directory_matches(tmp_path / "nonexistent", ChainMap({"count_files": 3}))
+        assert calc is None
+        assert ref == 3
+
+    def test_missing_target_raises(self, tmp_path):
+        params = ChainMap({"grep": "Energy:", "field": 2, "value": 1})
+        with pytest.raises(UsageError, match="'file' or 'directory'"):
+            match("no_target", params, tmp_path)
+
+    def test_missing_file_is_reported(self, tmp_path, capsys):
+        params = ChainMap({"file": "missing.txt", "grep": "Energy:", "field": 2, "value": 1})
+        success, calc = match("energy", params, tmp_path)
+        assert (success, calc) == (False, None)
+        out = capsys.readouterr().out
+        assert "energy" in out
+        assert "FAIL" in out
+        assert "'missing.txt' not found" in out
+
+    def test_pattern_not_found_is_reported(self, tmp_path, capsys):
+        (tmp_path / "results.txt").write_text("Energy: -42.5\n")
+        params = ChainMap({"file": "results.txt", "grep": "Force:", "field": 2, "value": 1})
+        success, _ = match("force", params, tmp_path)
+        assert success is False
+        out = capsys.readouterr().out
+        assert "FAIL" in out
+        assert "No value found in 'results.txt'" in out

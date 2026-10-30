@@ -34,6 +34,8 @@ _MPI_NP_FLAG: dict[str, str] = {
 
 _DEFAULT_NP_FLAG = "-np"
 
+_INPUT_METHODS = ("argument", "stdin", "rename")
+
 
 class TestExecutor:
     """Execute a single test input in a temporary directory.
@@ -41,6 +43,9 @@ class TestExecutor:
     Args:
         output_formatter: Formatter used to display stdout/stderr on failure.
     """
+
+    # Not a test class, although its name matches pytest's discovery pattern
+    __test__ = False
 
     def __init__(self, output_formatter: OutputFormatter | None = None):
         self.output_formatter = output_formatter or OutputFormatter()
@@ -80,6 +85,12 @@ class TestExecutor:
         input_method = input_config.get("InputMethod", "argument")
         rename_target = input_config.get("RenameTo")
 
+        # Validate before any file is copied
+        if input_method not in _INPUT_METHODS:
+            raise UsageError(f"Unknown input method: {input_method}")
+        if input_method == "rename" and not rename_target:
+            raise UsageError(f"Input '{input_file}' uses InputMethod 'rename' but has no 'RenameTo'")
+
         working_input_name = self._prepare_files(
             input_file,
             test_dir,
@@ -118,13 +129,15 @@ class TestExecutor:
     ) -> Path:
         """Validate and resolve the executable path."""
 
-        executable_name = input_config["Executable"]
+        executable_name = input_config.get("Executable")
+        if not executable_name:
+            raise UsageError("No 'Executable' defined for this input")
         executable_path = Path(exec_path) / executable_name
 
         if not executable_path.is_file():
-            raise FileNotFoundError(f"Executable '{executable_name}' not available at {executable_path}")
+            raise UsageError(f"Executable '{executable_name}' not available at {executable_path}")
         if not (executable_path.stat().st_mode & 0o111):
-            raise PermissionError(f"Executable '{executable_name}' is not executable")
+            raise UsageError(f"Executable '{executable_name}' is not executable")
 
         resolved = executable_path if executable_path.is_absolute() else Path.cwd() / executable_path
         return resolved
@@ -140,21 +153,19 @@ class TestExecutor:
     ) -> str:
         """Copy input and extra files into the temporary directory.
 
+        Files are copied flat, so an input in a subdirectory of the test
+        directory is used by its file name.
+
         Returns the working name of the input file inside *temp_dir*.
         """
 
         source_input_path = test_dir / input_file
         if not source_input_path.exists():
-            raise FileNotFoundError(f"Input file not found: {source_input_path}")
+            raise UsageError(f"Input file not found: {source_input_path}")
 
-        if input_method == "rename" and rename_target:
-            shutil.copy2(source_input_path, temp_dir / rename_target)
-            logging.debug(f"Copied input file: {input_file} -> {rename_target}")
-            working_input_name = rename_target
-        else:
-            shutil.copy2(source_input_path, temp_dir)
-            logging.debug(f"Copied input file: {input_file}")
-            working_input_name = str(input_file)
+        working_input_name = rename_target if input_method == "rename" and rename_target else input_file.name
+        shutil.copy2(source_input_path, temp_dir / working_input_name)
+        logging.debug(f"Copied input file: {input_file} -> {working_input_name}")
 
         for extra_file in extra_files:
             source_extra_path = test_dir / extra_file
@@ -162,7 +173,7 @@ class TestExecutor:
                 shutil.copy2(source_extra_path, temp_dir)
                 logging.debug(f"Copied extra file: {extra_file}")
             else:
-                raise FileNotFoundError(f"Extra file not found: {source_extra_path}")
+                raise UsageError(f"Extra file not found: {source_extra_path}")
 
         return working_input_name
 
@@ -249,13 +260,13 @@ class TestExecutor:
                 logging.debug(f"STDERR: {stderr_content}")
 
         except subprocess.TimeoutExpired:
-            logging.debug(f"Test execution timed out after {timeout} seconds")
             execution_success = False
+            self.output_formatter.print_execution_error(str(input_file), f"timed out after {timeout} s")
             if not expected_failure:
                 self.output_formatter.print_execution_output(temp_dir, str(input_file))
         except Exception as e:
-            logging.debug(f"Test execution failed: {e}")
             execution_success = False
+            self.output_formatter.print_execution_error(str(input_file), f"failed to run: {e}")
             if not expected_failure:
                 self.output_formatter.print_execution_output(temp_dir, str(input_file))
         finally:
