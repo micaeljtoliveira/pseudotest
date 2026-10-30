@@ -41,6 +41,11 @@ class TestMatchCompareResult:
         result = match_compare_result("too_tight", "1.23", 1.23, tolerance=1e-6)
         assert result is False
 
+    def test_any_tolerance_is_reliable_for_scientific_zero(self):
+        """A zero in scientific notation is exact, so a tolerance below its mantissa's precision passes."""
+        result = match_compare_result("sci_zero", "0.00000000E+000", 0.0, tolerance=4.7e-22)
+        assert result is True
+
     def test_numeric_match_near_zero_reference(self):
         """Cover the branch where |reference| <= 1e-10 (no deviation % printed)."""
         result = match_compare_result("zero_ref", "0.0001", 0.0, tolerance=None)
@@ -81,6 +86,14 @@ class TestGetPrecision:
     def test_decimal_precision(self):
         p = get_precision_from_string_format("3.14")
         assert abs(p - 0.01) < 1e-12
+
+    def test_scientific_notation_zero_is_exact(self):
+        assert get_precision_from_string_format("0.00000000E+000") == 0.0
+        assert get_precision_from_string_format("-0.0000E+00") == 0.0
+
+    def test_fixed_notation_zero_keeps_precision(self):
+        p = get_precision_from_string_format("0.000")
+        assert abs(p - 0.001) < 1e-12
 
 
 # ---------------------------------------------------------------------------

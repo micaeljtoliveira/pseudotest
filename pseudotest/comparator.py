@@ -20,7 +20,8 @@ def get_precision_from_string_format(value_str: str) -> float:
         value_str: String representation of a number (e.g. "3.14", "1.23e+02")
 
     Returns:
-        The precision implied by the string format, or 0.0 for non-numeric input.
+        The precision implied by the string format, or 0.0 for non-numeric input
+        and for a zero written in scientific notation, which is exact.
     """
     try:
         float(value_str)
@@ -34,6 +35,9 @@ def get_precision_from_string_format(value_str: str) -> float:
     sci_match = re.match(r"^[+-]?(\d*\.?\d*)[eE]([+-]?\d+)$", clean_str)
     if sci_match:
         mantissa, exp_str = sci_match.groups()
+        # Every non-zero value is written with its own exponent, so a zero is exact
+        if float(mantissa) == 0.0:
+            return 0.0
         exponent = int(exp_str)
 
         if "." in mantissa:

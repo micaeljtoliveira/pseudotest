@@ -404,7 +404,7 @@ energy:
 
 Without `tol`, numeric values must match exactly (difference == 0). String values always require exact equality regardless of `tol`.
 
-If the specified `tol` is smaller than the effective precision implied by the format of the extracted value (e.g. `tol: 1e-8` for a value printed as `1.234`), the match is treated as a **failure**. The detail block reports the offending tolerance and the effective precision, and suggests a minimum acceptable value. This catches configurations where the tolerance constraint is meaningless because the output cannot resolve differences that fine.
+If the specified `tol` is smaller than the effective precision implied by the format of the extracted value (e.g. `tol: 1e-8` for a value printed as `1.234`), the match is treated as a **failure**. The detail block reports the offending tolerance and the effective precision, and suggests a minimum acceptable value. This catches configurations where the tolerance constraint is meaningless because the output cannot resolve differences that fine. A zero printed in scientific notation (e.g. `0.00000000E+000`) is exact, so any tolerance is accepted for it.
 
 ### File metadata match
 
