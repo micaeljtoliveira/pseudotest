@@ -1,11 +1,17 @@
 """Unit tests for pseudotest.config_updater."""
 
+import io
+
+import pytest
+
 from pseudotest.config_updater import (
     _cast_to_reference_type,
     _update_reference,
     _update_tolerance,
     compute_tolerance,
+    save_config,
 )
+from pseudotest.test_config import yaml
 
 
 class TestComputeTolerance:
@@ -89,3 +95,55 @@ class TestUpdateReference:
         """No reference key in match_def → returns False."""
         match_def = {"something": "else"}
         assert _update_reference(match_def, 0, 1, "1.0") is False
+
+
+def _rewrite(template: str, calculated: str) -> str:
+    """Replace the reference written as *template* by *calculated* and return how it is written back."""
+    data = yaml.load(f"value: {template}\n")
+    data["value"] = _cast_to_reference_type(calculated, data["value"])
+    out = io.StringIO()
+    yaml.dump(data, out)
+    return out.getvalue().strip().split(": ", 1)[1]
+
+
+class TestReferenceFormat:
+    """Updated references keep the notation of the old ones without losing digits."""
+
+    @pytest.mark.parametrize(
+        ("template", "calculated"),
+        [
+            ("1.25568282E-01", "1.25568286E-01"),
+            ("-1.40343322E-16", "-1.52345678E-16"),
+            ("2.05890416E+01", "2.05890414E+01"),
+            ("9.99999999E-02", "1.00000001E-01"),
+            ("1.2345e-03", "1.2346e-03"),
+        ],
+    )
+    def test_scientific_notation(self, template, calculated):
+        assert _rewrite(template, calculated) == calculated
+
+    @pytest.mark.parametrize("calculated", ["-1.40343322E-16", "1.40343322E-16", "0.00000000E+00"])
+    def test_mantissa_with_leading_zero_is_normalised(self, calculated):
+        assert _rewrite("0.00000000E+09", calculated) == calculated
+
+    @pytest.mark.parametrize(
+        ("template", "calculated"),
+        [
+            ("-1.40343322E-16", "2.10000000E-17"),
+            ("1.25568282E-01", "-1.25568286E-01"),
+            ("-0.5000", "0.2500"),
+            ("0.5000", "-0.2500"),
+        ],
+    )
+    def test_sign_follows_value(self, template, calculated):
+        assert _rewrite(template, calculated) == calculated
+
+    def test_fixed_notation_keeps_decimal_places(self):
+        assert _rewrite("-42.5000", "-42.505") == "-42.5050"
+
+    def test_long_flow_sequence_not_wrapped(self, tmp_path):
+        line = "value: [" + ", ".join(f"{-215.070201 + i:.6f}" for i in range(14)) + "]\n"
+        path = tmp_path / "test.yaml"
+        path.write_text(line)
+        save_config(yaml.load(path), path)
+        assert path.read_text() == line

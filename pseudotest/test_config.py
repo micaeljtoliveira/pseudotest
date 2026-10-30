@@ -10,6 +10,8 @@ try:
 
     yaml = YAML()
     yaml.preserve_quotes = True
+    # Keep long flow sequences on one line when an updated config is written back
+    yaml.width = 4096
 except ImportError as e:  # pragma: no cover
     raise ImportError("ruamel.yaml not available. Install with: pip install ruamel.yaml") from e
 
