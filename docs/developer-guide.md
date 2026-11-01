@@ -20,16 +20,21 @@ pseudotest/
   formatting.py         # Terminal output, colors, and indentation
   exceptions.py         # Exception classes and exit codes
 tests/
-  conftest.py              # Shared pytest fixtures
-  test_integration.py      # End-to-end tests with mock executables
+  conftest.py              # Shared fixtures, including the `ws` workspace of the end-to-end tests
+  test_e2e_run.py          # End-to-end tests: matches, input methods, execution
+  test_e2e_report.py       # End-to-end tests: YAML report
+  test_e2e_update.py       # End-to-end tests: pseudotest-update
+  test_e2e_errors.py       # End-to-end tests: test-file errors, exit codes, installed scripts
   test_docs.py             # Checks of the YAML examples of the documentation
+  test_runner.py           # Unit tests for the walk of the match tree
   test_matchers.py         # Unit tests for match handlers
   test_executor.py         # Unit tests for execution engine
   test_comparator.py       # Unit tests for comparison logic
   test_config_updater.py   # Unit tests for match updates
   test_value_extractors.py # Unit tests for value extractors
   test_test_config.py      # Unit tests for configuration loading and parameter broadcasting
-  test_cli_run.py          # Unit tests for the entry point and its error handling
+  test_cli_run.py          # Unit tests for the pseudotest entry point, logging and error handling
+  test_cli_update.py       # Unit tests for the pseudotest-update entry point
   test_formatting.py       # Unit tests for output and display formatting
   test_report.py           # Unit tests for execution report
 ```
@@ -76,8 +81,9 @@ ruff format .
 
 A pre-commit hook for the ruff checks is available and it is strongly recommended to activate it.
 
-`pytest` also runs the examples of the docstrings as doctests, and generates a coverage report (`htmlcov/`), as
-configured in `pyproject.toml`.
+`pytest` also runs the examples of the docstrings as doctests and reports the coverage, which is 100%, as
+configured in `pyproject.toml`. Warnings are errors. Add `--cov-report=html` for a browsable coverage report in
+`htmlcov/`.
 
 ## Errors and exit codes
 
@@ -223,7 +229,7 @@ Matches:
     line_count: 42
 ```
 
-After registering, add unit tests in `tests/test_matchers.py` and integration coverage in `tests/test_integration.py`.
+After registering, add unit tests in `tests/test_matchers.py` and an end-to-end test in `tests/test_e2e_run.py`.
 
 ## Value extractors
 
@@ -339,20 +345,36 @@ Keys in `INTERNAL_KEYS` (currently just `match`) are excluded.
 
 ## Testing strategy
 
-- **Unit tests** target isolated modules: extractors, matchers, comparator, executor, updater, formatting, report.
-- **Integration tests** (`test_integration.py`) build self-contained workspaces with mock executables written in
-  Python (so they run on any platform), input files, and YAML test files. They call `main()` directly and assert exit
-  codes plus YAML side-effects.
+- **Unit tests** target isolated modules: extractors, matchers, comparator, executor, updater, formatting, report,
+  runner and the entry points.
+- **End-to-end tests** (`test_e2e_*.py`) run the `main()` functions of the entry points on self-contained workspaces,
+  and check the exit code, the output, and the test files and reports written. `test_e2e_errors.py` also runs the
+  installed scripts in subprocesses.
 - **Documentation tests** (`test_docs.py`) check that every `yaml` code block of the README and of the user
   documentation parses and uses only known keys.
-- `conftest.py` provides factory fixtures: `make_executable`, `make_input`, `make_yaml`, `run_pseudotest`,
-  `run_update`.
+
+The end-to-end tests use the `ws` fixture of `conftest.py`, a `Workspace` with a `bin/` directory for the
+executables, an `input.txt` input file, and a `work/` directory for the working directories of the runs:
+
+```python
+def test_energy(ws):
+    ws.mock({"results.txt": "Energy: -42.5000\n"})  # mock executable writing results.txt
+    ws.matches("energy: {file: results.txt, grep: 'Energy:', field: 2, value: -42.5}")
+    result = ws.run()  # or ws.update("-r"), with extra command-line arguments
+    assert result.rc == ExitCode.OK
+    assert "energy" in result.out  # standard output; result.log holds the log messages
+```
+
+`ws.mock()` writes a Python mock executable (so the tests run on any platform) with the files to write, its exit
+code, outputs, and the files it requires. `ws.executable()` writes any other script, `ws.input()` and `ws.config()`
+write input and test files, and `ws.load_matches()` and `ws.load_report()` read back the results. Check the output
+of the runs, not only their exit codes.
 
 Prefer adding tests close to the changed behavior. For a new match handler, add:
 
 1. Unit test in `test_matchers.py` covering successful extraction, extraction failure (`None`), and any `UsageError`
    paths.
-2. Integration test in `test_integration.py` using a mock executable that writes the expected output format.
+2. End-to-end test in `test_e2e_run.py` using a mock executable that writes the expected output format.
 
 ## Contribution checklist
 
