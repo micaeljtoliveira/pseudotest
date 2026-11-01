@@ -12,6 +12,11 @@ from pseudotest.runner import PseudoTestRunner
 ENERGY = "energy: {file: results.txt, grep: 'Energy:', field: 2, value: -42.5000}"
 
 
+def work_dir_of(out: str) -> Path:
+    """Return the working directory printed in the output of a run."""
+    return Path(re.search(r"Using workdir: (.+)", out).group(1))
+
+
 def status_line(out: str, name: str) -> str:
     """Return the status, OK or FAIL, displayed for the match or step *name*."""
     found = re.search(rf"^ *{re.escape(name)} +\[ ?(OK|FAIL) ?\]$", out, re.MULTILINE)
@@ -183,6 +188,21 @@ class TestInputs:
         )
         assert ws.run().rc == ExitCode.OK
 
+    @pytest.mark.parametrize(
+        ("method", "working_name"), [("argument", "input.txt"), ("stdin", "input.txt"), ("rename", "inp")]
+    )
+    def test_input_file_removed_after_run(self, ws, method, working_name):
+        """The input file is not mistaken for an output, whatever the input method."""
+        ws.mock()
+        ws.config(
+            f"Name: Cleanup\nExecutable: mock.py\nInputMethod: {method}\nRenameTo: inp\nInputs:\n  input.txt: {{}}\n"
+        )
+        result = ws.run("--preserve")
+        assert result.rc == ExitCode.OK
+        work_dir = work_dir_of(result.out)
+        assert (work_dir / "results.txt").exists()
+        assert not (work_dir / working_name).exists()
+
     def test_input_in_subdirectory_is_used_by_name(self, ws):
         ws.executable(ARGUMENT_READER)
         ws.input("inputs/case.in", content="hello world\n")
@@ -306,8 +326,7 @@ class TestExecution:
         ws.matches(ENERGY)
         result = ws.run(*(["--preserve"] if preserve else []))
         assert result.rc == ExitCode.OK
-        work_dir = Path(re.search(r"Using workdir: (.+)", result.out).group(1))
-        assert (work_dir / "results.txt").exists() is preserve
+        assert (work_dir_of(result.out) / "results.txt").exists() is preserve
 
     def test_runner_reuse_resets_counters(self, ws):
         ws.mock()

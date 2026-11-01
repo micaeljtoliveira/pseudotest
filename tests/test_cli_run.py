@@ -1,6 +1,8 @@
 """Unit tests for pseudotest.cli_run and pseudotest.__init__."""
 
 import logging
+import runpy
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -66,3 +68,11 @@ class TestHandleErrors:
     def test_main_reports_missing_test_file(self, tmp_path, caplog):
         assert pseudotest.main([str(tmp_path / "missing.yaml")]) == ExitCode.USAGE
         assert "Test file not found" in caplog.text
+
+
+def test_python_m_pseudotest(tmp_path, monkeypatch):
+    """python -m pseudotest runs the pseudotest command."""
+    monkeypatch.setattr(sys, "argv", ["pseudotest", str(tmp_path / "missing.yaml")])
+    with pytest.raises(SystemExit) as exit_info:
+        runpy.run_module("pseudotest", run_name="__main__")
+    assert exit_info.value.code == ExitCode.USAGE

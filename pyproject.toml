@@ -29,6 +29,7 @@ build-backend = "setuptools.build_meta"
 devel = [
     "ruff",
     "pre-commit",
+    "mypy",
 ]
 test = [
     "pytest>=6.0",
@@ -52,6 +53,10 @@ addopts = ["--cov=pseudotest", "--cov-report=term", "--doctest-modules"]
 filterwarnings = ["error"]
 # The package is listed for the examples of its docstrings, which are run as doctests
 testpaths = ["tests", "pseudotest"]
+
+[tool.mypy]
+files = ["pseudotest"]
+check_untyped_defs = true
 
 [tool.coverage.run]
 omit = ["setup.py"]

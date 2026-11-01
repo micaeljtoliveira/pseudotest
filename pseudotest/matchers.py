@@ -201,8 +201,7 @@ def handle_content_matches(lines: list[str], params: ChainMap[str, Any]) -> tupl
     """
     # Grep count takes precedence over all other content-based matches
     if "grep" in params and "count" in params:
-        calculated_value = str(sum(1 for line in lines if params["grep"] in line))
-        return calculated_value, params["count"]
+        return str(sum(1 for line in lines if params["grep"] in line)), params["count"]
 
     line = _select_line(lines, params)
 

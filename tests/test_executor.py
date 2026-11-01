@@ -153,6 +153,14 @@ class TestBuildCommand:
             args, _ = TestExecutor._build_command(exe, "input.txt", "argument", tmp_path, config)
         assert args[:3] == ["/opt/custom_mpi", "-np", "3"]
 
+    def test_mpi_launcher_with_options(self, tmp_path):
+        """MPIEXEC can include options of the launcher, and its flag is found from its name."""
+        exe = tmp_path / "prog"
+        config = ChainMap({"Processors": 2})
+        with patch.dict(os.environ, {"MPIEXEC": "/usr/bin/srun --mpi=pmix -c 'a b'"}):
+            args, _ = TestExecutor._build_command(exe, "input.txt", "argument", tmp_path, config)
+        assert args == ["/usr/bin/srun", "--mpi=pmix", "-c", "a b", "-n", "2", exe, "input.txt"]
+
     def test_mpi_default_processors(self, tmp_path):
         """When Processors is not set, defaults to 1."""
         exe = tmp_path / "prog"

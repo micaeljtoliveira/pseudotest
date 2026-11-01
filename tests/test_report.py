@@ -43,13 +43,10 @@ class TestBuildEntries:
     def test_match_entry(self):
         """The calculated value replaces the reference, which moves to 'reference'; internal keys are left out."""
         params = ChainMap({"value": -42.5, "match": "energy", "grep": "Energy:"}, {"file": "results.txt", "tol": 0.1})
-        assert ReportWriter.build_match_entry(params, "-42.6") == {
-            "file": "results.txt",
-            "grep": "Energy:",
-            "tol": 0.1,
-            "value": -42.6,
-            "reference": -42.5,
-        }
+        entry = ReportWriter.build_match_entry(params, "-42.6")
+        assert entry == {"file": "results.txt", "tol": 0.1, "value": -42.6, "reference": -42.5, "grep": "Energy:"}
+        # The order of the parameters is kept, with the inherited ones first
+        assert list(entry) == ["file", "tol", "value", "reference", "grep"]
 
     def test_match_entry_without_calculated_value(self):
         entry = ReportWriter.build_match_entry(ChainMap({"file": "out.txt", "size": 10}), None)

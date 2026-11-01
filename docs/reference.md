@@ -99,6 +99,8 @@ overflow `***`.
 pseudotest TEST_FILE [-D DIRECTORY] [-p] [-t TIMEOUT] [-r FILE] [-v | -vv]
 ```
 
+`python -m pseudotest` runs the same command.
+
 | Option | Default | Description |
 |---|---|---|
 | `TEST_FILE` | — | YAML test file to run |
@@ -131,7 +133,7 @@ Exactly one of `-t`, `-r` and `-R` must be given.
 
 | Variable | Description |
 |---|---|
-| `MPIEXEC` | MPI launcher prefixed to every command, with the number of processes set by `Processors` |
+| `MPIEXEC` | MPI launcher prefixed to every command, with the number of processes set by `Processors`. It can include options of the launcher, e.g. `mpirun --oversubscribe` |
 | `TMPDIR` | Directory in which the working directories are created |
 
 The flag giving the number of processes depends on the launcher:
