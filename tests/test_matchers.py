@@ -12,6 +12,7 @@ from pseudotest.matchers import (
     handle_directory_matches,
     handle_file_matches,
     match,
+    register_match_handler,
 )
 
 # ---------------------------------------------------------------------------
@@ -277,3 +278,36 @@ class TestMatchFailures:
         out = capsys.readouterr().out
         assert "FAIL" in out
         assert "No value found in 'results.txt'" in out
+
+
+# ---------------------------------------------------------------------------
+# Handlers registered by users
+# ---------------------------------------------------------------------------
+
+
+def _handle_line_count(filepath, params):
+    """The example of a new match type of the developer guide."""
+    try:
+        lines = filepath.read_text().splitlines()
+    except OSError:
+        return None, None
+    return str(len(lines)), params["line_count"]
+
+
+class TestRegisterMatchHandler:
+    def test_registered_handler_takes_precedence_over_builtin(self, tmp_path, restore_match_registry):
+        """The built-in content handler accepts any match with 'file', so it must come after the registered ones."""
+        register_match_handler(
+            predicate=lambda params: "file" in params and "line_count" in params,
+            handler=_handle_line_count,
+            keys={"file", "line_count"},
+            reference_keys={"line_count"},
+        )
+        (tmp_path / "results.txt").write_text("a\nb\n")
+        assert match("lines", ChainMap({"file": "results.txt", "line_count": 2}), tmp_path) == (True, "2")
+
+    def test_builtin_handlers_still_used(self, tmp_path, restore_match_registry):
+        register_match_handler(predicate=lambda params: "line_count" in params, handler=_handle_line_count)
+        (tmp_path / "results.txt").write_text("Energy: -42.5\n")
+        params = ChainMap({"file": "results.txt", "grep": "Energy:", "field": 2, "value": -42.5})
+        assert match("energy", params, tmp_path) == (True, "-42.5")

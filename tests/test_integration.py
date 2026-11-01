@@ -19,6 +19,7 @@ from unittest.mock import patch
 import pytest
 
 from pseudotest.exceptions import ExitCode
+from pseudotest.matchers import register_match_handler
 from pseudotest.runner import PseudoTestRunner
 from pseudotest.test_config import yaml
 
@@ -2496,4 +2497,54 @@ class TestUpdateRobustness:
             make_yaml, tmp_path, "short: {file: results.txt, grep: 'Short:', field: 2, value: 1.225}"
         )
         assert run_update(yaml_file, exec_dir, "-t") == ExitCode.TEST_FAILURE
+        assert run_pseudotest(yaml_file, exec_dir) == ExitCode.OK
+
+
+# ---------------------------------------------------------------------------
+# Match types registered by users
+# ---------------------------------------------------------------------------
+
+MOCK_LINES_SCRIPT = """\
+#!/usr/bin/env python3
+\"\"\"Mock executable writing a file of three lines.\"\"\"
+import sys
+
+with open("results.txt", "w") as f:
+    f.write("one\\ntwo\\nthree\\n")
+sys.exit(0)
+"""
+
+
+class TestRegisteredMatchType:
+    def test_line_count_example_of_developer_guide(
+        self, tmp_path, exec_dir, make_executable, make_input, make_yaml, run_pseudotest, restore_match_registry
+    ):
+        def handle_line_count(filepath, params):
+            try:
+                lines = filepath.read_text().splitlines()
+            except OSError:
+                return None, None
+            return str(len(lines)), params["line_count"]
+
+        register_match_handler(
+            predicate=lambda params: "file" in params and "line_count" in params,
+            handler=handle_line_count,
+            keys={"file", "line_count"},
+            reference_keys={"line_count"},
+        )
+        make_executable(exec_dir, "mock.py", MOCK_LINES_SCRIPT)
+        make_input(tmp_path)
+        yaml_file = make_yaml(
+            tmp_path,
+            """\
+            Name: Line count
+            Executable: mock.py
+            Inputs:
+              input.txt:
+                Matches:
+                  output_lines:
+                    file: results.txt
+                    line_count: 3
+            """,
+        )
         assert run_pseudotest(yaml_file, exec_dir) == ExitCode.OK
