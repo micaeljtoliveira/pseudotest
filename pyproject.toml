@@ -49,8 +49,9 @@ Repository = "https://github.com/micaeljtoliveira/pseudotest"
 Issues = "https://github.com/micaeljtoliveira/pseudotest/issues"
 
 [tool.pytest.ini_options]
-addopts = ["--cov=pseudotest", "--cov-report=term", "--cov-report=html"]
-testpaths = ["tests"]
+addopts = ["--cov=pseudotest", "--cov-report=term", "--cov-report=html", "--doctest-modules"]
+# The package is listed for the examples of its docstrings, which are run as doctests
+testpaths = ["tests", "pseudotest"]
 
 [tool.coverage.run]
 omit = ["setup.py"]

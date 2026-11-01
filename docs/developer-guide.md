@@ -1,56 +1,64 @@
 # Developer Guide
 
-This guide is for contributors extending or maintaining `pseudotest`.
+This guide is for contributors extending or maintaining `pseudotest`. The [Reference](reference.md) describes the
+test file format, the command-line options and the exit codes, which are not repeated here.
 
 ## Project layout
 
 ```
 pseudotest/
-  cli_run.py            # Entry point: pseudotest
+  cli_run.py            # Entry point: pseudotest, logging set-up and error handling
   cli_update.py         # Entry point: pseudotest-update
   runner.py             # Top-level orchestration (PseudoTestRunner)
   executor.py           # Subprocess execution and workdir/file preparation
   matchers.py           # Match dispatch and built-in match handlers
   value_extractors.py   # Pure text extraction helpers
-  comparator.py         # Numeric/string comparison logic and tolerance behavior
+  comparator.py         # Number parsing, numeric/string comparison and tolerance behavior
   config_updater.py     # In-place YAML updates for tolerance/reference modes
-  report.py             # Report model and YAML serialization
-  test_config.py        # YAML loading, scope helpers, and broadcast expansion
+  report.py             # Report entries and YAML serialization
+  test_config.py        # YAML loading, validation, scope helpers, and broadcast expansion
   formatting.py         # Terminal output, colors, and indentation
   exceptions.py         # Exception classes and exit codes
 tests/
   conftest.py              # Shared pytest fixtures
   test_integration.py      # End-to-end tests with mock executables
+  test_docs.py             # Checks of the YAML examples of the documentation
   test_matchers.py         # Unit tests for match handlers
   test_executor.py         # Unit tests for execution engine
   test_comparator.py       # Unit tests for comparison logic
   test_config_updater.py   # Unit tests for match updates
   test_value_extractors.py # Unit tests for value extractors
   test_test_config.py      # Unit tests for configuration loading and parameter broadcasting
-  test_cli_run.py          # Unit tests for top-level entry point
+  test_cli_run.py          # Unit tests for the entry point and its error handling
   test_formatting.py       # Unit tests for output and display formatting
   test_report.py           # Unit tests for execution report
 ```
 
 ## Architecture overview
 
-`PseudoTestRunner` coordinates the full workflow:
+`PseudoTestRunner.run()` coordinates the full workflow:
 
-1. Load YAML test config (`TestConfig`).
-2. Create a temporary work directory.
-3. For each input listed under `Inputs`:
-   - Run executable with `TestExecutor` (copies files, builds command, runs subprocess).
-   - Evaluate matches through `matchers.match()` (extract value, compare, optionally update config).
-   - Collect report entries.
-4. Emit summary statistics and return an exit code.
-5. Optionally write a YAML report and/or the updated config.
+1. Load the test file (`TestConfig.load`) and, unless the test is disabled, validate its inputs
+   (`TestConfig.validate`).
+2. Create a temporary working directory, shared by all the inputs.
+3. For each input listed under `Inputs`, in `_run_input`:
+   - Run the executable with `TestExecutor` (copies files, builds the command, runs the subprocess).
+   - Walk the match tree with `run_matches`, which evaluates each leaf match through `matchers.match()` (extract the
+     value, compare, display) and applies the updates requested by `pseudotest-update`.
+   - Collect the report entries.
+4. Remove the working directory (in a `finally` block, so also on errors), unless `--preserve` is given.
+5. Print the summary statistics, optionally write the YAML report and the updated test file, and return the exit code.
 
 Key design choices:
 
-- **Separation of concerns**: execution, matching, comparison, reporting, and updating are in distinct modules with no cross-cutting dependencies.
-- **Predicate-based handler dispatch**: match handlers are registered with a predicate; the first one whose predicate returns `True` handles the match. This makes it easy to add new match types without modifying existing code.
-- **YAML round-trip via ruamel.yaml**: comments and formatting are preserved when `pseudotest-update` writes back to the config file.
-- **ChainMap scoping**: per-input configuration inherits from top-level defaults, enabling DRY configs with per-input overrides.
+- **Separation of concerns**: execution, matching, comparison, reporting, and updating are in distinct modules. Some
+  dependencies remain: the comparator displays its results, and the report and the updater use the key sets of the
+  matchers.
+- **Predicate-based handler dispatch**: match handlers are registered with a predicate; the first one whose predicate
+  returns `True` handles the match. This makes it possible to add match types without modifying existing code.
+- **YAML round-trip via ruamel.yaml**: comments and formatting are preserved when `pseudotest-update` writes back to
+  the test file.
+- **ChainMap scoping**: an input inherits the top-level keys, and a match inherits the parameters of its groups.
 
 ## Development setup
 
@@ -68,124 +76,78 @@ ruff format .
 
 A pre-commit hook for the ruff checks is available and it is strongly recommended to activate it.
 
-Coverage report (`htmlcov/`) is generated automatically by `pytest` as configured in `pyproject.toml`.
+`pytest` also runs the examples of the docstrings as doctests, and generates a coverage report (`htmlcov/`), as
+configured in `pyproject.toml`.
 
-## CLI contracts
+## Errors and exit codes
 
-### `pseudotest`
+User errors raise `UsageError` (a `CliError` with exit code 2):
 
-From `cli_run.py`:
+- `TestConfig.load`: missing or invalid test file, no `Name`.
+- `TestConfig.validate`: missing `Inputs`, or an input that is not a mapping.
+- `TestExecutor`: no `Executable`, executable missing or not executable, missing input or extra file, unknown
+  `InputMethod`, `rename` without `RenameTo`. The input method is validated before any file is copied.
+- `PseudoTestRunner.run_matches`: a match that is not a mapping, an unknown match parameter, or a match named after a
+  parameter.
+- `matchers.match()` and its handlers: no `file` or `directory`, `line: 0`, missing extraction parameters.
 
-| Argument | Type | Default | Description |
-|---|---|---|---|
-| `test_file` | positional | — | YAML test config path |
-| `-D, --directory` | option | `.` | Directory containing executables |
-| `-p, --preserve` | flag | `False` | Keep temp workdir after run |
-| `-v, --verbose` | count | `0` (WARNING) | `-v` = INFO, `-vv` = DEBUG |
-| `-t, --timeout` | int | `600` | Per-input timeout in seconds |
-| `-r, --report FILE` | option | `None` | Append YAML report to FILE |
+Both entry points pass the run to `cli_run.handle_errors`, which turns a `CliError` into its exit code with a one-line
+`ERROR:` message, and any other exception into `ExitCode.INTERNAL` (99). With `-vv`, the traceback is printed too.
+`ExitCode.RUNTIME` (3) is reserved: nothing raises a plain `CliError` yet.
 
-### `pseudotest-update`
+## Configuration scoping
 
-From `cli_update.py`:
+`TestConfig.input_scope(input_name)` returns a `ChainMap` with two layers:
 
-| Argument | Type | Default | Description |
-|---|---|---|---|
-| `test_file` | positional | — | YAML test config path |
-| `-D, --directory` | option | `.` | Directory containing executables |
-| `-v, --verbose` | count | `0` | Logging verbosity |
-| `--timeout` | int | `600` | Per-input timeout in seconds |
-| `-t, --tolerance` | flag (exclusive) | — | Update `tol` for failing numeric matches |
-| `-r, --reference` | flag (exclusive) | — | Update reference values for failing matches |
-| `-o, --output FILE` | option | `None` | Write updates to FILE instead of overwriting |
+1. The parameters of the input (the mapping under `Inputs.<name>`, empty when the input has none).
+2. The top-level keys of the test file.
 
-`--tolerance` and `--reference` are mutually exclusive and one is required.
+Any key of the input shadows the same top-level key, and missing keys fall through to the top level.
 
-## YAML schema
+### Match tree
 
-### Top-level keys
+`PseudoTestRunner.run_matches(scope, work_dir, indent_level, scope_path)` walks a `Matches` mapping:
 
-```
-Name          (required str)
-Enabled       (bool, default true)
-Executable    (required str)
-InputMethod   (str: argument|stdin|rename, default argument)
-RenameTo      (str, required when InputMethod=rename)
-Inputs        (required mapping)
-```
+- Keys in `RESERVED_KEYS` are parameters of the current scope, inherited by its matches. A reserved key holding a
+  mapping is an error: a match cannot be named after a parameter.
+- A match is a **group** if it contains a mapping under a key that is not a parameter. Its parameters are chained in
+  front of the inherited ones and `run_matches` recurses into it.
+- Otherwise it is a **leaf**: all its keys must be in `RESERVED_KEYS`, and `_run_leaf_match` evaluates it.
 
-### Per-input keys
-
-```
-ExtraFiles      (list[str])
-Processors      (int, default 1)
-ExpectedFailure (bool, default false)
-InputMethod     (str, overrides top-level)
-RenameTo        (str, overrides top-level)
-Matches         (mapping)
-```
-
-Top-level keys (`Executable`, `InputMethod`, `RenameTo`) serve as defaults. Any per-input definition takes precedence via `ChainMap`.
-
-### Match keys
-
-```
-file           target file path (for file/content matches)
-directory      target directory path (for directory matches)
-grep           substring to search for
-line           1-based line number, or offset from grep match
-field          1-based whitespace-separated field index
-column         1-based character column start position
-field_re       field index for real part (complex magnitude)
-field_im       field index for imaginary part (complex magnitude)
-value          reference value (content matches)
-count          expected number of matching lines (grep)
-size           expected file size in bytes
-file_is_present  filename expected inside a directory
-count_files    expected number of files in a directory
-tol            absolute numeric tolerance
-protected      bool; prevents pseudotest-update from modifying this match
-match          (internal) broadcast element display label
-```
-
-### Configuration scoping
-
-`TestConfig.input_scope(input_name)` returns a `ChainMap` with three layers:
-
-1. Per-input overrides (the dict under `Inputs.<name>`)
-2. Input-level defaults (empty unless explicitly provided)
-3. Top-level defaults (`Name`, `Executable`, `InputMethod`, etc.)
-
-This means any key present in the per-input dict shadows the same key from the top level, while missing keys fall through to top-level defaults automatically.
+`scope_path` (e.g. `Inputs > input.txt > Matches > energy`) locates the match in the error messages.
 
 ### Broadcast parameter expansion
 
-`broadcast_params(params)` detects list-valued keys and expands the `ChainMap` into one `ChainMap` per list index. Rules:
+`broadcast_params(params)` detects list-valued keys and expands the `ChainMap` into one `ChainMap` per list index:
 
 - All list-valued keys must have the same length; a `UsageError` is raised otherwise.
 - Scalar keys are copied unchanged into every expanded `ChainMap`.
-- The internal `match` key is set to the index label for display purposes.
 
-Example:
+`_run_leaf_match` names each element after its `match` value, or `name[i]` when there is no `match` list.
 
 ```python
-params = {"file": ["a.txt", "b.txt"], "field": 2, "value": [1.0, 2.0]}
+params = ChainMap({"file": ["a.txt", "b.txt"], "field": 2, "value": [1.0, 2.0]})
 result = broadcast_params(params)
-# result[0] = {"file": "a.txt", "field": 2, "value": 1.0, "match": "0"}
-# result[1] = {"file": "b.txt", "field": 2, "value": 2.0, "match": "1"}
+# result[0] = {"file": "a.txt", "field": 2, "value": 1.0}
+# result[1] = {"file": "b.txt", "field": 2, "value": 2.0}
 ```
 
 ## Match system internals
 
-`pseudotest.matchers` maintains a registry of `(predicate, handler)` pairs in `_MATCH_HANDLERS`. When `match()` is called, it iterates the registry and calls the first handler whose predicate returns `True` for the given params.
+`pseudotest.matchers` maintains a registry of `(predicate, handler)` pairs: `_MATCH_HANDLERS` for the handlers
+registered with `register_match_handler()`, and `_BUILTIN_MATCH_HANDLERS` for the built-in ones. `match()` resolves
+the target path from `directory` (or else `file`), calls the first handler whose predicate returns `True` for the
+parameters, trying the registered handlers before the built-in ones, and compares the result with
+`comparator.match_compare_result`. When the handler returns no calculated
+value, `match()` reports the failure with its reason (the target does not exist, or no value was found in it).
 
 ### Key sets
 
-Four sets are accumulated by `register_match_handler()` and used by the runner and updater:
+Four sets are accumulated by `register_match_handler()`:
 
 | Set | Purpose |
 |---|---|
-| `RESERVED_KEYS` | All keys recognised by any handler; used to detect unknown keys |
+| `RESERVED_KEYS` | All match parameters; tells parameters from match names, and rejects unknown parameters |
 | `REFERENCE_KEYS` | Keys that hold a reference value (`value`, `count`, `size`, `count_files`, `file_is_present`) |
 | `INTERNAL_KEYS` | Keys excluded from reports (`match`) |
 | `NON_UPDATABLE_KEYS` | Reference keys that `pseudotest-update` must never modify (`file_is_present`) |
@@ -198,10 +160,12 @@ Implement a handler with the signature:
 def my_handler(target_path: Path, params: ChainMap[str, Any]) -> tuple[str | None, Any]:
     """Return (calculated_value, reference_value).
 
-    Return (None, None) to signal extraction failure (the match is marked as failed).
+    Return (None, None) to signal extraction failure (the match is reported as failed).
     """
     ...
 ```
+
+The target path comes from the `file` or `directory` parameter, so a new match type must use one of them.
 
 Register it:
 
@@ -211,12 +175,15 @@ from pseudotest.matchers import register_match_handler
 register_match_handler(
     predicate=lambda params: "my_key" in params,
     handler=my_handler,
-    keys={"my_key", "my_ref"},          # all recognised keys for this handler
-    reference_keys={"my_ref"},           # key(s) holding the expected value
-    internal_keys=set(),                 # keys excluded from reports
-    non_updatable_keys=set(),            # reference keys that must not be auto-updated
+    keys={"my_key", "my_ref"},  # all recognised keys for this handler
+    reference_keys={"my_ref"},  # key(s) holding the expected value
+    internal_keys=set(),  # keys excluded from reports
+    non_updatable_keys=set(),  # reference keys that must not be auto-updated
 )
 ```
+
+Every key of the new match type must be registered: a key that is not in `RESERVED_KEYS` is rejected as an unknown
+match parameter.
 
 Complete example — a handler that checks a file's line count:
 
@@ -246,7 +213,8 @@ register_match_handler(
 )
 ```
 
-This handler can then be used in YAML:
+Registered handlers are tried before the built-in ones, so this handler takes the matches with `line_count` before
+the built-in content handler, which takes any other match with `file`. It can then be used in YAML:
 
 ```yaml
 Matches:
@@ -259,78 +227,94 @@ After registering, add unit tests in `tests/test_matchers.py` and integration co
 
 ## Value extractors
 
-`pseudotest.value_extractors` contains four pure functions with no I/O or side effects:
+`pseudotest.value_extractors` contains four pure functions with no I/O or side effects. Their docstrings have
+examples, which are run as doctests.
 
-### `get_target_line(lines, line_num)`
-
-Returns `lines[line_num - 1]` for positive `line_num` (1-based), or `lines[line_num]` for negative values (Python-style end indexing: `-1` = last line). Returns `None` for out-of-bounds.
-
-Note: this function receives a 0-based index internally (`matchers.py` subtracts 1 before calling it for the `line` case).
-
-### `find_pattern_line(lines, pattern, offset=0)`
-
-Returns the line at `offset` from the first line containing `pattern` as a substring (case-sensitive). Returns `None` if the pattern is not found or the offset takes the index out of range.
-
-### `extract_field_from_line(line, field_num)`
-
-Splits `line` on whitespace sequences or commas (with optional surrounding whitespace) and returns the element at `field_num - 1` (1-based, like `awk '{print $N}'`). Two consecutive commas produce an empty string at the corresponding position. Returns `None` for `None` input or out-of-range index.
-
-### `extract_column_from_line(line, column_pos)`
-
-Equivalent to `cut -c<column_pos>- | awk '{print $1}'`. Slices the line starting at `column_pos` (1-based), strips leading whitespace, and returns the first token. Tokens are delimited by whitespace or commas (with optional surrounding whitespace). Returns `None` if `column_pos` exceeds line length; returns `""` if there are no tokens after that position.
+- `get_target_line(lines, line_num)`: returns `lines[line_num]`, with Python indexing (0-based, negative from the
+  end), or `None` when out of range. `matchers` converts the 1-based `line` parameter to this index.
+- `find_pattern_line(lines, pattern, offset=0)`: returns the line at `offset` from the first line containing
+  `pattern` as a substring (case-sensitive), or `None` if the pattern is not found or the offset is out of range.
+- `extract_field_from_line(line, field_num)`: splits `line` on whitespace sequences or commas (with optional
+  surrounding whitespace) and returns the 1-based field, like `awk '{print $N}'`. Two consecutive commas give an
+  empty string. Returns `None` for `None` input or an out-of-range field.
+- `extract_column_from_line(line, column_pos)`: like `cut -c<column_pos>- | awk '{print $1}'`, with tokens delimited by
+  whitespace or commas. Returns `None` if `column_pos` exceeds the line length, and `""` if there is no token after
+  that position.
 
 ## Execution internals
 
 `TestExecutor.execute()` performs four steps:
 
-1. **Resolve executable** – verifies the file exists at `exec_path/Executable` and has the execute bit.
-2. **Prepare files** – copies the input file and each `ExtraFiles` entry from the test directory into `temp_dir`. For `rename` mode, the input is copied as `RenameTo`; for other modes, the original filename is preserved.
-3. **Build command** – assembles the subprocess argument list. When `MPIEXEC` is set, prepends `[mpiexec, <flag>, <Processors>]` using the flag from `_MPI_NP_FLAG` (keyed by launcher basename).
-4. **Run subprocess** – runs inside `temp_dir`, capturing stdout and stderr to files named `stdout` and `stderr` in the work directory. A non-zero exit code is a failure unless `ExpectedFailure=true`.
+1. **Resolve executable**: verifies the file exists at `exec_path/Executable` and has the execute bit.
+2. **Prepare files**: validates the input method, then copies the input file and each `ExtraFiles` entry from the test
+   directory into `temp_dir`, flat. The input keeps its file name, or is copied as `RenameTo` in `rename` mode.
+3. **Build command**: assembles the subprocess argument list. When `MPIEXEC` is set, prepends
+   `[mpiexec, <flag>, <Processors>]` using the flag from `_MPI_NP_FLAG` (keyed by launcher basename).
+4. **Run subprocess**: runs inside `temp_dir`, capturing stdout and stderr to files named `stdout` and `stderr` in the
+   working directory. A non-zero exit code is a failure. Timeouts and launch failures are reported through
+   `OutputFormatter.print_execution_error`.
 
-For `stdin` mode, the input file is opened and passed as `stdin`; the file handle is closed in a `finally` block. For `argument` and `rename` modes, the copied input file is deleted from the work directory after execution to avoid polluting match checks.
+For `stdin` mode, the input file is opened and passed as `stdin`; the file handle is closed in a `finally` block. For
+`argument` and `rename` modes, the copied input file is deleted from the working directory after execution so that it
+is not mistaken for an output.
 
 ## Comparison and tolerance behavior
 
-`match_compare_result` dispatches on whether both values are numeric:
+`comparator.parse_number` parses numbers, accepting Fortran `D` exponents; `is_number` is built on it.
+`match_compare_result` dispatches on whether both values are numbers:
 
-- **Numeric**: `abs(float(calculated) - float(reference)) <= tol` (or `== 0.0` if no `tol`).
+- **Numeric**: `abs(calculated - reference) <= tol`, or `== 0.0` without `tol`. Equal infinities, and two nans, have a
+  difference of `0.0`.
 - **String**: `str(calculated) == str(reference)`.
 
-Special float strings (`nan`, `inf`, `-inf`, `+inf`) are recognised as numeric.
+When `tol` is set and the precision implied by the string format of the calculated value
+(`get_precision_from_string_format`) is coarser than `tol`, the match is **unconditionally failed**. For example, a
+value printed as `1.234` has precision `0.001`; setting `tol: 1e-6` fails because the output cannot distinguish
+differences smaller than `0.001`. The failure details show the tolerance and the effective precision instead of the
+usual calculated/reference/difference lines, and suggest a minimum tolerance. Failure details are printed with
+`formatting.display_failure_details`.
 
-Fortran-style `D`/`d` exponent notation (e.g. `1.23D-04`) is normalised to `e` before parsing by `get_precision_from_string_format`.
-
-When `tol` is set and the effective precision implied by the string format of the calculated value is coarser than `tol`, the match is **unconditionally failed**. For example, a value printed as `1.234` has precision `0.001`; setting `tol: 1e-6` fails because the output cannot distinguish differences smaller than `0.001`. The failure detail block prints only the offending tolerance and the effective precision (the usual calculated/reference/difference lines are suppressed), and suggests a minimum acceptable tolerance.
-
-A zero written in scientific notation (e.g. `0.00000000E+000`) has precision `0.0`: every non-zero value is written with its own exponent, so the zero is exact and any tolerance is accepted for it. Without this, a match that is exactly zero with one compiler and a rounding residue such as `4.2E-22` with another could not pass on both, and the tolerance update jobs would undo each other.
+A zero written in scientific notation (e.g. `0.00000000E+000`) has precision `0.0`: every non-zero value is written
+with its own exponent, so the zero is exact and any tolerance is accepted for it. Without this, a match that is
+exactly zero with one compiler and a rounding residue such as `4.2E-22` with another could not pass on both, and the
+tolerance update jobs would undo each other. `inf` and `nan` are exact too.
 
 ## Config updater internals
 
-`apply_match_updates(match_def, results, total, mode)` iterates over broadcast results and patches the raw ruamel.yaml dict in-place:
+`apply_match_updates(match_def, results, total, mode)` iterates over broadcast results and patches the raw
+ruamel.yaml dict in-place. Protected matches, non-updatable reference keys and extraction failures are skipped.
 
 **Tolerance mode** (`_update_tolerance`):
-1. Computes `compute_tolerance(|calculated - reference|)`.
-2. If `total > 1` (broadcast), ensures `tol` in `match_def` is a list of length `total`, then sets the element at the failing index.
+
+1. Computes `compute_tolerance(|calculated - reference|)`, and takes the precision of the calculated value if it is
+   larger, so that the match passes on the next run. Infinite or nan differences are skipped with a warning.
+2. If `total > 1` (broadcast), ensures `tol` in `match_def` is a list of length `total`, then sets the element at the
+   failing index.
 3. If `total == 1`, sets `tol` directly.
 
 **Reference mode** (`_update_reference`):
+
 1. Identifies the reference key (the first key in `REFERENCE_KEYS` present in `match_def`).
-2. Calls `_cast_to_reference_type(calculated_value, original_ref)` to match the original Python/YAML type.
-3. For `ScalarFloat`, uses `_make_scalar_float` to preserve decimal precision from the original template.
+2. Skips, with a warning, a numeric reference that the calculated value would replace with text.
+3. Calls `cast_like(calculated_value, reference)` to match the original Python/YAML type.
 
-Type mapping:
+`cast_like` is also used by the report. Type mapping:
 
-| ruamel.yaml type | Python cast |
+| Reference type | Result |
 |---|---|
-| `ScalarFloat` | `float` (with decimal precision preserved) |
-| `ScalarInt` | `int` |
-| `ScalarBoolean` | `bool` |
-| anything else | same type as reference, fallback to string |
+| `bool` (including ruamel's `ScalarBoolean`) | `True`/`False` from `true`/`yes`/`on` or `false`/`no`/`off`, any case |
+| `ScalarFloat` | `ScalarFloat` with the notation and precision of the reference (`_make_scalar_float`); a plain float for `inf`/`nan` |
+| `int` | `int` when the value is integral, `float` otherwise |
+| `float` | `float` |
+| anything else | the calculated string |
+
+A value that cannot be parsed as the reference type is returned as a string.
 
 ## Report format internals
 
-`ReportWriter.write(path, data)` serialises a nested dict to YAML using `ruamel.yaml` in block style. If the file already exists, the new document is appended with a `---` separator (standard YAML multi-document format).
+`ReportWriter.write(report_file, test_file_path, test_config_data, report_inputs)` serialises the report of one run to
+YAML, keyed by `test_file_path` without a leading `./`, and appends it to `report_file` after a `---` separator
+(standard YAML multi-document format). A disabled test is written with an empty `Inputs` mapping.
 
 `build_input_entry` constructs:
 
@@ -346,35 +330,28 @@ Type mapping:
 ```
 
 `build_match_entry` constructs one entry per match with:
-- all non-internal params from the match definition
-- the original reference value under the `reference` key
-- the calculated value under the `"<reference_key>"` defined in the corresponding match handler.
+
+- all non-internal parameters of the match, including inherited ones;
+- the original reference value under the `reference` key;
+- the calculated value, cast with `cast_like`, under the reference key of the match handler.
 
 Keys in `INTERNAL_KEYS` (currently just `match`) are excluded.
-
-## Error handling and exit codes
-
-Defined in `exceptions.py`:
-
-| Code | Constant | Meaning |
-|---|---|---|
-| `0` | `ExitCode.OK` | All tests passed |
-| `1` | `ExitCode.TEST_FAILURE` | One or more tests/matches failed |
-| `2` | `ExitCode.USAGE` | Bad configuration or command-line usage |
-| `3` | `ExitCode.RUNTIME` | Runtime error during execution |
-| `99` | `ExitCode.INTERNAL` | Unexpected internal error |
-
-`CliError` is the base class for user-facing errors; `UsageError` is its subclass for configuration errors. Both carry an `exit_code` attribute. CLI entry points catch `CliError` (returns attached code) and bare `Exception` (returns `INTERNAL`).
 
 ## Testing strategy
 
 - **Unit tests** target isolated modules: extractors, matchers, comparator, executor, updater, formatting, report.
-- **Integration tests** (`test_integration.py`) build self-contained workspaces with mock executables written in Python (so they run on any platform), input files, and YAML configs. They call `main()` directly and assert exit codes plus YAML side-effects.
-- `conftest.py` provides factory fixtures: `make_executable`, `make_input`, `make_yaml`, `run_pseudotest`, `run_update`.
+- **Integration tests** (`test_integration.py`) build self-contained workspaces with mock executables written in
+  Python (so they run on any platform), input files, and YAML test files. They call `main()` directly and assert exit
+  codes plus YAML side-effects.
+- **Documentation tests** (`test_docs.py`) check that every `yaml` code block of the README and of the user
+  documentation parses and uses only known keys.
+- `conftest.py` provides factory fixtures: `make_executable`, `make_input`, `make_yaml`, `run_pseudotest`,
+  `run_update`.
 
 Prefer adding tests close to the changed behavior. For a new match handler, add:
 
-1. Unit test in `test_matchers.py` covering successful extraction, extraction failure (`None`), and any `UsageError` paths.
+1. Unit test in `test_matchers.py` covering successful extraction, extraction failure (`None`), and any `UsageError`
+   paths.
 2. Integration test in `test_integration.py` using a mock executable that writes the expected output format.
 
 ## Contribution checklist
@@ -382,10 +359,13 @@ Prefer adding tests close to the changed behavior. For a new match handler, add:
 1. Keep API and YAML behavior backward-compatible unless intentionally versioned.
 2. Add or update tests for new logic and edge cases.
 3. Run `pytest` and `ruff check .`.
-4. Update the user guide and README for any user-facing behavior changes.
-5. Keep match, update, and report semantics consistent. A new reference key must be added to `REFERENCE_KEYS` for update and report to handle it correctly.
+4. Update the user guide, the reference, and the changelog for any user-facing behavior change.
+5. Keep match, update, and report semantics consistent. A new reference key must be added to `REFERENCE_KEYS` for
+   update and report to handle it correctly.
 
-## Documentation with MkDocs
+## Documentation
+
+The documentation is built with [Zensical](https://zensical.org/), from the sources in `docs/`:
 
 ```bash
 pip install -e .[docs]
