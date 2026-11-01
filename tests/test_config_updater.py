@@ -5,9 +5,10 @@ import io
 import pytest
 
 from pseudotest.config_updater import (
-    _cast_to_reference_type,
     _update_reference,
     _update_tolerance,
+    apply_match_updates,
+    cast_like,
     compute_tolerance,
     save_config,
 )
@@ -25,22 +26,22 @@ class TestComputeTolerance:
 
 class TestCastToReferenceType:
     def test_successful_int_cast(self):
-        result = _cast_to_reference_type("123", 42)
+        result = cast_like("123", 42)
         assert result == 123
         assert isinstance(result, int)
 
     def test_failed_cast_falls_back_to_string(self):
-        result = _cast_to_reference_type("hello", 42)
+        result = cast_like("hello", 42)
         assert result == "hello"
         assert isinstance(result, str)
 
     def test_successful_float_cast(self):
-        result = _cast_to_reference_type("3.14", 1.0)
+        result = cast_like("3.14", 1.0)
         assert result == 3.14
         assert isinstance(result, float)
 
     def test_successful_str_cast(self):
-        result = _cast_to_reference_type("anything", "ref")
+        result = cast_like("anything", "ref")
         assert result == "anything"
         assert isinstance(result, str)
 
@@ -107,7 +108,7 @@ class TestUpdateReference:
 def _rewrite(template: str, calculated: str) -> str:
     """Replace the reference written as *template* by *calculated* and return how it is written back."""
     data = yaml.load(f"value: {template}\n")
-    data["value"] = _cast_to_reference_type(calculated, data["value"])
+    data["value"] = cast_like(calculated, data["value"])
     out = io.StringIO()
     yaml.dump(data, out)
     return out.getvalue().strip().split(": ", 1)[1]
@@ -154,3 +155,56 @@ class TestReferenceFormat:
         path.write_text(line)
         save_config(yaml.load(path), path)
         assert path.read_text() == line
+
+
+class TestCastLikeSpecialValues:
+    @pytest.mark.parametrize(("value", "expected"), [("false", False), ("TRUE", True), ("no", False), ("yes", True)])
+    def test_bool_reference(self, value, expected):
+        """bool("false") is True, so booleans are parsed from their spelling."""
+        assert cast_like(value, not expected) is expected
+
+    def test_bool_reference_unrecognised_value_kept_as_string(self):
+        assert cast_like("maybe", True) == "maybe"
+
+    def test_int_reference_with_fractional_value(self):
+        assert cast_like("12.5", 12) == 12.5
+
+    def test_infinity_replaces_float_reference(self):
+        assert _rewrite("1.5", "inf") == ".inf"
+
+
+class TestUpdateReferenceNonNumeric:
+    def test_numeric_reference_not_replaced_by_text(self, caplog):
+        """A Fortran overflow such as '***' must not replace a numeric reference."""
+        match_def = {"value": 1.5}
+        assert _update_reference(match_def, 0, 1, "***") is False
+        assert match_def["value"] == 1.5
+        assert "Not replacing numeric reference" in caplog.text
+
+    def test_string_reference_replaced_by_text(self):
+        match_def = {"value": "converged"}
+        assert _update_reference(match_def, 0, 1, "diverged") is True
+        assert match_def["value"] == "diverged"
+
+
+class TestUpdateToleranceLimits:
+    def test_tolerance_not_below_precision_of_calculated_value(self):
+        """The difference 0.005 needs tol 0.0055, but '1.23' is only precise to 0.01."""
+        match_def = {"value": 1.225}
+        assert _update_tolerance(match_def, 0, 1, "1.23", {"value": 1.225}) is True
+        assert match_def["tol"] == 0.01
+
+    def test_infinite_difference_not_covered(self, caplog):
+        match_def = {"value": 1.5}
+        assert _update_tolerance(match_def, 0, 1, "inf", {"value": 1.5}) is False
+        assert "tol" not in match_def
+        assert "No tolerance can cover" in caplog.text
+
+
+class TestApplyMatchUpdates:
+    def test_protected_match_not_updated(self):
+        """apply_match_updates honours 'protected' when called directly, not only through the runner."""
+        match_def = {"value": 1.0, "protected": True}
+        results = [(0, False, "2.0", {"value": 1.0, "protected": True})]
+        assert apply_match_updates(match_def, results, 1, "reference") is False
+        assert match_def["value"] == 1.0

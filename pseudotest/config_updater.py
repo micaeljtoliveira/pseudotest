@@ -19,9 +19,10 @@ import math
 from pathlib import Path
 from typing import Any
 
+from ruamel.yaml.scalarbool import ScalarBoolean
 from ruamel.yaml.scalarfloat import ScalarFloat
 
-from pseudotest.comparator import get_precision_from_string_format, is_number
+from pseudotest.comparator import get_precision_from_string_format, parse_number
 from pseudotest.matchers import NON_UPDATABLE_KEYS, REFERENCE_KEYS
 from pseudotest.test_config import yaml
 
@@ -55,32 +56,38 @@ def compute_tolerance(difference: float) -> float:
 # Type casting
 # ---------------------------------------------------------------------------
 
-# Map ruamel.yaml scalar types to Python builtins.
-_BUILTIN_MAP: dict[str, type] = {
-    "ScalarFloat": float,
-    "ScalarInt": int,
-    "ScalarBoolean": bool,
-}
+# Strings accepted for a boolean reference.  bool() cannot be used, as bool("false") is True.
+_BOOL_STRINGS: dict[str, bool] = {"true": True, "yes": True, "on": True, "false": False, "no": False, "off": False}
 
 
-def _cast_to_reference_type(value_str: str, reference: Any) -> Any:
-    """Cast *value_str* to the Python type of *reference*.
+def cast_like(value_str: str | None, reference: Any) -> Any:
+    """Cast *value_str* to the type of *reference*.
 
     When *reference* is a :class:`ScalarFloat`, a new ``ScalarFloat`` is
     returned that preserves the original formatting (decimal precision,
-    sign convention) so that the YAML round-trip stays clean.
+    sign convention) so that the YAML round-trip stays clean.  An integer
+    reference gets an integer only when the value is integral.
 
     Falls back to returning *value_str* unchanged when the cast fails.
     """
-    if isinstance(reference, ScalarFloat):
-        return _make_scalar_float(float(value_str), reference)
+    if value_str is None:
+        return None
 
-    ref_type = type(reference)
-    cast_type = _BUILTIN_MAP.get(ref_type.__name__, ref_type)
-    try:
-        return cast_type(value_str)
-    except (ValueError, TypeError):
-        return value_str
+    # ruamel.yaml's ScalarBoolean subclasses int, so test it before numbers
+    if isinstance(reference, bool | ScalarBoolean):
+        return _BOOL_STRINGS.get(value_str.strip().lower(), value_str)
+
+    if isinstance(reference, int | float):
+        number = parse_number(value_str)
+        if number is None:
+            return value_str
+        if isinstance(reference, ScalarFloat) and math.isfinite(number):
+            return _make_scalar_float(number, reference)
+        if isinstance(reference, int) and number.is_integer():
+            return int(number)
+        return number
+
+    return value_str
 
 
 def _make_scalar_float(value: float, template: ScalarFloat) -> ScalarFloat:
@@ -198,13 +205,17 @@ def _update_tolerance(
     if ref_key is None:
         return False
 
-    reference = param_set[ref_key]
+    calculated = parse_number(calculated_value)
+    reference = parse_number(param_set[ref_key])
 
     # Tolerance only makes sense for numeric comparisons
-    if not (is_number(str(reference)) and is_number(calculated_value)):
+    if calculated is None or reference is None:
         return False
 
-    difference = abs(float(calculated_value) - float(reference))
+    difference = abs(calculated - reference)
+    if not math.isfinite(difference):
+        logging.warning(f"No tolerance can cover the difference between {calculated_value} and {param_set[ref_key]}")
+        return False
     if difference == 0:
         # Check if the existing tolerance is smaller than the effective precision
         existing_tol = param_set.get("tol") or 0
@@ -215,7 +226,8 @@ def _update_tolerance(
             return False
         new_tol = 0.0
     else:
-        new_tol = compute_tolerance(difference)
+        # A tolerance below the precision of the calculated value would make the match fail anyway
+        new_tol = max(compute_tolerance(difference), get_precision_from_string_format(calculated_value))
 
     if total > 1:
         # Broadcast: ensure tol is a list of the right length
@@ -243,12 +255,18 @@ def _update_reference(
         return False
 
     original_ref = match_def[ref_key]
+    broadcast = total > 1 and isinstance(original_ref, list)
+    reference = original_ref[index] if broadcast else original_ref
 
-    if total > 1 and isinstance(original_ref, list):
-        typed = _cast_to_reference_type(calculated_value, original_ref[index])
+    # A numeric reference is never replaced by text, e.g. a Fortran overflow such as '***'
+    if parse_number(reference) is not None and parse_number(calculated_value) is None:
+        logging.warning(f"Not replacing numeric reference {reference} with non-numeric value '{calculated_value}'")
+        return False
+
+    typed = cast_like(calculated_value, reference)
+    if broadcast:
         match_def[ref_key][index] = typed
     else:
-        typed = _cast_to_reference_type(calculated_value, original_ref)
         match_def[ref_key] = typed
 
     return True

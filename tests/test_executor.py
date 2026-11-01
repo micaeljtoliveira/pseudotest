@@ -2,6 +2,7 @@
 
 import os
 import stat
+import subprocess
 from collections import ChainMap
 from pathlib import Path
 from unittest.mock import patch
@@ -19,7 +20,7 @@ from pseudotest.executor import TestExecutor
 class TestResolveExecutable:
     def test_missing_executable(self, tmp_path):
         config = ChainMap({"Executable": "does_not_exist.py"})
-        with pytest.raises(FileNotFoundError, match="not available"):
+        with pytest.raises(UsageError, match="not available"):
             TestExecutor._resolve_executable(config, tmp_path)
 
     def test_non_executable_file(self, tmp_path):
@@ -28,7 +29,7 @@ class TestResolveExecutable:
         script.chmod(0o644)
 
         config = ChainMap({"Executable": "no_exec.py"})
-        with pytest.raises(PermissionError, match="not executable"):
+        with pytest.raises(UsageError, match="not executable"):
             TestExecutor._resolve_executable(config, tmp_path)
 
     def test_valid_executable(self, tmp_path):
@@ -50,7 +51,7 @@ class TestPrepareFiles:
     def test_missing_input_file(self, tmp_path):
         work_dir = tmp_path / "work"
         work_dir.mkdir()
-        with pytest.raises(FileNotFoundError, match="Input file not found"):
+        with pytest.raises(UsageError, match="Input file not found"):
             TestExecutor._prepare_files(Path("nonexistent.txt"), tmp_path, work_dir, [], "argument", None)
 
     def test_missing_extra_file(self, tmp_path):
@@ -58,7 +59,7 @@ class TestPrepareFiles:
         work_dir.mkdir()
         (tmp_path / "input.txt").write_text("data\n")
 
-        with pytest.raises(FileNotFoundError, match="Extra file not found"):
+        with pytest.raises(UsageError, match="Extra file not found"):
             TestExecutor._prepare_files(Path("input.txt"), tmp_path, work_dir, ["does_not_exist.dat"], "argument", None)
 
     def test_rename_method(self, tmp_path):
@@ -192,3 +193,68 @@ class TestRunSubprocess:
             )
         assert success is False
         assert elapsed >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# Validation and file preparation
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteValidation:
+    @pytest.fixture
+    def setup(self, tmp_path):
+        exe = tmp_path / "prog"
+        exe.write_text("#!/bin/sh\n")
+        exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+        (tmp_path / "input.txt").write_text("data\n")
+        work_dir = tmp_path / "work"
+        work_dir.mkdir()
+        return tmp_path, work_dir
+
+    def test_missing_executable_key(self, tmp_path):
+        with pytest.raises(UsageError, match="No 'Executable'"):
+            TestExecutor._resolve_executable(ChainMap({}), tmp_path)
+
+    @pytest.mark.parametrize(
+        ("config", "message"),
+        [
+            ({"InputMethod": "rename"}, "has no 'RenameTo'"),
+            ({"InputMethod": "foobar"}, "Unknown input method"),
+        ],
+    )
+    def test_invalid_input_method_raises_before_copying(self, setup, config, message):
+        test_dir, work_dir = setup
+        input_config = ChainMap(config, {"Executable": "prog"})
+        with pytest.raises(UsageError, match=message):
+            TestExecutor().execute(input_config, Path("input.txt"), test_dir, test_dir, work_dir, False, 30)
+        assert list(work_dir.iterdir()) == []
+
+    def test_input_in_subdirectory_used_by_name(self, tmp_path):
+        work_dir = tmp_path / "work"
+        work_dir.mkdir()
+        (tmp_path / "inputs").mkdir()
+        (tmp_path / "inputs" / "case.in").write_text("data\n")
+
+        name = TestExecutor._prepare_files(Path("inputs/case.in"), tmp_path, work_dir, [], "argument", None)
+        assert name == "case.in"
+        assert (work_dir / "case.in").exists()
+
+
+class TestExecutionErrors:
+    @pytest.mark.parametrize(
+        ("error", "message"),
+        [
+            (subprocess.TimeoutExpired("prog", 30), "input.txt: timed out after 30 s"),
+            (OSError("Simulated launch error"), "input.txt: failed to run: Simulated launch error"),
+        ],
+    )
+    def test_reason_is_shown(self, tmp_path, capsys, error, message):
+        def failing_run(*args, **kwargs):
+            raise error
+
+        with patch.object(subprocess, "run", failing_run):
+            success, _ = TestExecutor()._run_subprocess(
+                ["prog", "input.txt"], None, tmp_path, "input.txt", Path("input.txt"), False, 30
+            )
+        assert success is False
+        assert message in capsys.readouterr().out

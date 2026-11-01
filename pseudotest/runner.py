@@ -9,11 +9,12 @@ import logging
 import shutil
 import tempfile
 from collections import ChainMap
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from pseudotest.config_updater import apply_match_updates, save_config
-from pseudotest.exceptions import ExitCode
+from pseudotest.exceptions import ExitCode, UsageError
 from pseudotest.executor import TestExecutor
 from pseudotest.formatting import Colors, OutputFormatter, display_match_status, indent
 from pseudotest.matchers import RESERVED_KEYS, match
@@ -44,11 +45,15 @@ class PseudoTestRunner:
 
     def run_matches(
         self,
-        current_match_scope: ChainMap[str, Any],
+        current_match_scope: Mapping[str, Any],
         work_dir: Path,
         indent_level: int = 3,
+        scope_path: str = "Matches",
     ) -> dict[str, Any]:
         """Recursively walk the match tree and evaluate every leaf match.
+
+        A match containing other matches (mappings under names that are not match parameters) is a group, whose
+        parameters are inherited by its children. Any other match is a leaf, which must only contain match parameters.
 
         Updates internal counters for total and failed matches.
 
@@ -57,54 +62,138 @@ class PseudoTestRunner:
                 parameters and nested matches
             work_dir: Working directory where output files are located
             indent_level: Nesting level for output display
+            scope_path: Location of *current_match_scope* in the test file, used in error messages
 
         Returns:
             Nested dict of match results suitable for YAML serialisation.
+
+        Raises:
+            UsageError: If a match is not a mapping or contains an unknown parameter
         """
         local_match_params = {key: current_match_scope[key] for key in RESERVED_KEYS if key in current_match_scope}
         results: dict[str, Any] = {}
 
         for match_name, match_definition in current_match_scope.items():
+            match_path = f"{scope_path} > {match_name}"
             if match_name in RESERVED_KEYS:
+                if isinstance(match_definition, Mapping):
+                    raise UsageError(f"Match '{match_path}' is named after a match parameter; choose another name")
                 continue
 
-            combined_match_def = ChainMap(current_match_scope[match_name], local_match_params)
+            if match_definition is None:
+                raise UsageError(f"Match '{match_path}' has no parameters")
+            if not isinstance(match_definition, Mapping):
+                raise UsageError(f"Unknown match parameter '{match_name}' in '{scope_path}'")
 
-            if all(key in RESERVED_KEYS for key in match_definition):
-                # Leaf match, so evaluate it
-                param_sets = broadcast_params(combined_match_def)
+            combined_match_def = ChainMap(match_definition, local_match_params)
 
-                if len(param_sets) > 1:
-                    print(f"{indent(indent_level)}{match_name}")
-                    nested_level = indent_level + 1
-                else:
-                    nested_level = indent_level
-
-                update_results: list[tuple[int, bool, str | None, Any]] = []
-
-                for i, param_set in enumerate(param_sets):
-                    self.total_matches += 1
-                    display_name = param_set.get("match", match_name) if len(param_sets) > 1 else match_name
-                    match_success, calculated_value = match(
-                        display_name, param_set, work_dir, indent_level=nested_level
-                    )
-                    if not match_success:
-                        self.failed_matches += 1
-                    results[display_name] = ReportWriter.build_match_entry(param_set, calculated_value)
-                    update_results.append((i, match_success, calculated_value, param_set))
-
-                if (
-                    self.update_mode
-                    and not combined_match_def.get("protected", False)
-                    and apply_match_updates(match_definition, update_results, len(param_sets), self.update_mode)
-                ):
-                    self.config_modified = True
-            else:
+            if any(key not in RESERVED_KEYS and isinstance(value, Mapping) for key, value in match_definition.items()):
                 # Nested match group, need to recursively evaluate children
                 print(f"{indent(indent_level)}{match_name}")
-                results[match_name] = self.run_matches(combined_match_def, work_dir, indent_level + 1)
+                results[match_name] = self.run_matches(combined_match_def, work_dir, indent_level + 1, match_path)
+                continue
+
+            unknown_keys = [key for key in match_definition if key not in RESERVED_KEYS]
+            if unknown_keys:
+                raise UsageError(f"Unknown match parameter '{unknown_keys[0]}' in '{match_path}'")
+
+            results.update(
+                self._run_leaf_match(match_name, match_definition, combined_match_def, work_dir, indent_level)
+            )
 
         return results
+
+    def _run_leaf_match(
+        self,
+        match_name: str,
+        match_definition: Mapping[str, Any],
+        combined_match_def: ChainMap[str, Any],
+        work_dir: Path,
+        indent_level: int,
+    ) -> dict[str, Any]:
+        """Evaluate a leaf match, one evaluation per broadcast element, and apply the requested config updates.
+
+        Returns:
+            Report entries of the evaluated matches, keyed by their display names.
+        """
+        param_sets = broadcast_params(combined_match_def)
+
+        if len(param_sets) > 1:
+            print(f"{indent(indent_level)}{match_name}")
+            nested_level = indent_level + 1
+        else:
+            nested_level = indent_level
+
+        results: dict[str, Any] = {}
+        update_results: list[tuple[int, bool, str | None, Any]] = []
+
+        for i, param_set in enumerate(param_sets):
+            self.total_matches += 1
+            # Broadcast elements are named by the 'match' list, or by their index
+            display_name = param_set.get("match", f"{match_name}[{i}]") if len(param_sets) > 1 else match_name
+            match_success, calculated_value = match(display_name, param_set, work_dir, indent_level=nested_level)
+            if not match_success:
+                self.failed_matches += 1
+            results[display_name] = ReportWriter.build_match_entry(param_set, calculated_value)
+            update_results.append((i, match_success, calculated_value, param_set))
+
+        if (
+            self.update_mode
+            and not combined_match_def.get("protected", False)
+            and apply_match_updates(match_definition, update_results, len(param_sets), self.update_mode)
+        ):
+            self.config_modified = True
+
+        return results
+
+    def _run_input(
+        self,
+        test_config: TestConfig,
+        input_filename: str,
+        test_directory: Path,
+        executable_directory: Path,
+        work_dir: Path,
+        timeout: int,
+    ) -> dict[str, Any]:
+        """Execute one input in *work_dir*, evaluate its matches, and return its report entry."""
+        print(f"{indent(1)}{input_filename}:")
+
+        input_scope = test_config.input_scope(input_filename)
+        expected_failure = input_scope.get("ExpectedFailure", False)
+
+        # Delegate execution to the executor (DIP)
+        execution_success, execution_time = self.executor.execute(
+            input_scope,
+            Path(input_filename),
+            test_directory,
+            executable_directory,
+            work_dir,
+            expected_failure,
+            timeout,
+        )
+
+        print(f"{indent(2)}Elapsed time: {execution_time:.3f}s")
+
+        if expected_failure:
+            execution_success = not execution_success
+            display_match_status("Failed execution", execution_success, indent_level=2)
+        else:
+            display_match_status("Execution", execution_success, indent_level=2)
+
+        self.failed_executions += 0 if execution_success else 1
+
+        input_report = ReportWriter.build_input_entry(input_scope, expected_failure, execution_success, execution_time)
+
+        if execution_success:
+            print(f"{indent(2)}Matches:")
+            match_definitions = input_scope.get("Matches") or {}
+            if not isinstance(match_definitions, Mapping):
+                raise UsageError(f"'Matches' of input '{input_filename}' must be a mapping of matches")
+            input_report["Matches"] = self.run_matches(
+                match_definitions, work_dir, scope_path=f"Inputs > {input_filename} > Matches"
+            )
+
+        return input_report
 
     def run(
         self,
@@ -124,7 +213,7 @@ class PseudoTestRunner:
             preserve_workdir: Whether to preserve temporary working directory
             timeout: Execution timeout in seconds
             report_file: Optional path to write a YAML execution report
-            update_mode: Optional update mode (``"tolerance"`` or ``"reference"``)
+            update_mode: Optional update mode (``"tolerance"``, ``"reference"`` or ``"reference_all"``)
             update_output: Optional alternative path for updated config file
 
         Returns:
@@ -132,6 +221,9 @@ class PseudoTestRunner:
         """
         self.update_mode = update_mode
         self.config_modified = False
+        self.failed_executions = 0
+        self.failed_matches = 0
+        self.total_matches = 0
 
         # Load and validate test configuration
         test_config_file = Path(test_file_path)
@@ -142,66 +234,37 @@ class PseudoTestRunner:
 
         if not test_config.data.get("Enabled", True):
             print("Test disabled: skipping test")
+            if report_file:
+                ReportWriter.write(report_file, test_file_path, test_config.data, {})
             return ExitCode.OK
+
+        test_config.validate()
 
         test_directory = test_config_file.resolve().parent
         temp_work_dir = Path(tempfile.mkdtemp(prefix="pseudotest_"))
         print(f"Using workdir: {temp_work_dir}")
 
-        # Process each test input
+        # Process each test input; all of them run in the same working directory
         report_inputs: dict[str, Any] = {}
 
         print("Inputs:")
-        for input_filename in test_config.data["Inputs"]:
-            print(f"{indent(1)}{input_filename}:")
-
-            input_scope = test_config.input_scope(input_filename)
-            expected_failure = input_scope.get("ExpectedFailure", False)
-
-            # Delegate execution to the executor (DIP)
-            execution_success, execution_time = self.executor.execute(
-                input_scope,
-                Path(input_filename),
-                test_directory,
-                Path(executable_directory),
-                temp_work_dir,
-                expected_failure,
-                timeout,
-            )
-
-            print(f"{indent(2)}Elapsed time: {execution_time:.3f}s")
-
-            if expected_failure:
-                execution_success = not execution_success
-                display_match_status("Failed execution", execution_success, indent_level=2)
+        try:
+            for input_filename in test_config.data["Inputs"]:
+                report_inputs[input_filename] = self._run_input(
+                    test_config, input_filename, test_directory, Path(executable_directory), temp_work_dir, timeout
+                )
+        finally:
+            if preserve_workdir:
+                logging.debug(f"Preserved working directory: {temp_work_dir}")
             else:
-                display_match_status("Execution", execution_success, indent_level=2)
-
-            self.failed_executions += 0 if execution_success else 1
-
-            input_report = ReportWriter.build_input_entry(
-                input_scope, expected_failure, execution_success, execution_time
-            )
-
-            if execution_success:
-                print(f"{indent(2)}Matches:")
-                match_definitions = input_scope.get("Matches", {})
-                match_results = self.run_matches(match_definitions, temp_work_dir)
-                input_report["Matches"] = match_results
-
-            report_inputs[input_filename] = input_report
+                shutil.rmtree(temp_work_dir, ignore_errors=True)
+                logging.debug(f"Removed working directory: {temp_work_dir}")
 
         # Display test summary
         print("Test Summary:")
         print(f"{indent(1)}Failed executions : {self.failed_executions:-5}")
         print(f"{indent(1)}Total matches     : {self.total_matches:-5}")
         print(f"{indent(1)}Failed matches    : {self.failed_matches:-5}")
-
-        if preserve_workdir:
-            logging.debug(f"Preserved working directory: {temp_work_dir}")
-        else:
-            shutil.rmtree(temp_work_dir, ignore_errors=True)
-            logging.debug(f"Removed working directory: {temp_work_dir}")
 
         exit_code = ExitCode.OK if (self.failed_executions == 0 and self.failed_matches == 0) else ExitCode.TEST_FAILURE
 
