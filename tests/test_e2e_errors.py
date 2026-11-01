@@ -116,6 +116,7 @@ def installed_command(name: str) -> list[str]:
 COMMANDS = {
     "pseudotest": lambda: installed_command("pseudotest"),
     "pseudotest-update": lambda: [*installed_command("pseudotest-update"), "-r"],
+    "python-m-pseudotest": lambda: [sys.executable, "-m", "pseudotest"],
 }
 
 

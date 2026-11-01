@@ -28,13 +28,13 @@ class ReportWriter:
     def build_match_entry(params: ChainMap[str, Any], calculated_value: str | None) -> dict[str, Any]:
         """Build a report entry for a single leaf match.
 
-        Includes the original match parameters with the reference value
-        replaced by the calculated value, cast to the same type as the
-        reference.
+        Includes the original match parameters, in their order with the
+        inherited ones first, with the reference value replaced by the
+        calculated value, cast to the same type as the reference.
         """
         entry: dict[str, Any] = {}
-        for key in RESERVED_KEYS:
-            if key in params and key not in INTERNAL_KEYS:
+        for key in params:
+            if key in RESERVED_KEYS and key not in INTERNAL_KEYS:
                 if key in REFERENCE_KEYS:
                     entry[key] = cast_like(calculated_value, params[key])
                     entry["reference"] = params[key]

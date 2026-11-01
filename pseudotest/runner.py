@@ -9,7 +9,7 @@ import logging
 import shutil
 import tempfile
 from collections import ChainMap
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +82,7 @@ class PseudoTestRunner:
 
             if match_definition is None:
                 raise UsageError(f"Match '{match_path}' has no parameters")
-            if not isinstance(match_definition, Mapping):
+            if not isinstance(match_definition, MutableMapping):
                 raise UsageError(f"Unknown match parameter '{match_name}' in '{scope_path}'")
 
             combined_match_def = ChainMap(match_definition, local_match_params)
@@ -106,7 +106,7 @@ class PseudoTestRunner:
     def _run_leaf_match(
         self,
         match_name: str,
-        match_definition: Mapping[str, Any],
+        match_definition: MutableMapping[str, Any],
         combined_match_def: ChainMap[str, Any],
         work_dir: Path,
         indent_level: int,

@@ -19,9 +19,20 @@ class TestComputeTolerance:
     def test_zero_difference(self):
         assert compute_tolerance(0) == 0.0
 
-    def test_nonzero_difference(self):
-        tol = compute_tolerance(0.0034)
-        assert tol > 0.0034
+    @pytest.mark.parametrize(
+        ("difference", "tolerance"),
+        [
+            (0.0034, 0.0038),
+            (1.7, 1.9),
+            (123.0, 140.0),
+            # Floating-point noise must not round the tolerance up
+            (0.1, 0.11),
+            (abs(-42.5050 - -42.5000), 0.0055),
+            (abs(2.0005 - 2.0), 0.00055),
+        ],
+    )
+    def test_rounded_up_to_two_significant_figures(self, difference, tolerance):
+        assert compute_tolerance(difference) == tolerance
 
 
 class TestCastToReferenceType:

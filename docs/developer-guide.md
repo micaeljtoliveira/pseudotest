@@ -77,6 +77,7 @@ Recommended checks before committing:
 pytest
 ruff check .
 ruff format .
+mypy
 ```
 
 A pre-commit hook for the ruff checks is available and it is strongly recommended to activate it.
@@ -254,15 +255,16 @@ examples, which are run as doctests.
 1. **Resolve executable**: verifies the file exists at `exec_path/Executable` and has the execute bit.
 2. **Prepare files**: validates the input method, then copies the input file and each `ExtraFiles` entry from the test
    directory into `temp_dir`, flat. The input keeps its file name, or is copied as `RenameTo` in `rename` mode.
-3. **Build command**: assembles the subprocess argument list. When `MPIEXEC` is set, prepends
-   `[mpiexec, <flag>, <Processors>]` using the flag from `_MPI_NP_FLAG` (keyed by launcher basename).
+3. **Build command**: assembles the subprocess argument list. When `MPIEXEC` is set, splits it like a shell command
+   (so that it can include options of the launcher) and prepends `[*launcher, <flag>, <Processors>]`, using the flag
+   from `_MPI_NP_FLAG` (keyed by the basename of the launcher).
 4. **Run subprocess**: runs inside `temp_dir`, capturing stdout and stderr to files named `stdout` and `stderr` in the
    working directory. A non-zero exit code is a failure. Timeouts and launch failures are reported through
    `OutputFormatter.print_execution_error`.
 
-For `stdin` mode, the input file is opened and passed as `stdin`; the file handle is closed in a `finally` block. For
-`argument` and `rename` modes, the copied input file is deleted from the working directory after execution so that it
-is not mistaken for an output.
+For `stdin` mode, the input file is opened and passed as `stdin`; the file handle is closed in a `finally` block. In
+every mode, the copied input file is then deleted from the working directory, so that it is not mistaken for an output
+by the matches and the next inputs.
 
 ## Comparison and tolerance behavior
 
@@ -337,7 +339,7 @@ YAML, keyed by `test_file_path` without a leading `./`, and appends it to `repor
 
 `build_match_entry` constructs one entry per match with:
 
-- all non-internal parameters of the match, including inherited ones;
+- all non-internal parameters of the match, in their order, with the inherited ones first;
 - the original reference value under the `reference` key;
 - the calculated value, cast with `cast_like`, under the reference key of the match handler.
 
@@ -380,7 +382,7 @@ Prefer adding tests close to the changed behavior. For a new match handler, add:
 
 1. Keep API and YAML behavior backward-compatible unless intentionally versioned.
 2. Add or update tests for new logic and edge cases.
-3. Run `pytest` and `ruff check .`.
+3. Run `pytest`, `ruff check .` and `mypy`.
 4. Update the user guide, the reference, and the changelog for any user-facing behavior change.
 5. Keep match, update, and report semantics consistent. A new reference key must be added to `REFERENCE_KEYS` for
    update and report to handle it correctly.

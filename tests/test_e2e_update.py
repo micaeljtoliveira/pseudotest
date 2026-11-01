@@ -23,7 +23,7 @@ OUTPUT = {
 }
 
 # Tolerance written for the difference of 0.005 between -42.5050 and -42.5000
-TOL = pytest.approx(0.0055, rel=0.05)
+TOL = 0.0055
 
 # Marks a parameter that must not be in the updated match
 ABSENT = object()

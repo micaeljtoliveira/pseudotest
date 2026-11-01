@@ -90,8 +90,7 @@ the number of MPI processes (`Processors`), and whether the executable must fail
   next ones, e.g. to restart from a previous calculation.
 - **Files are copied flat.** The input file and the `ExtraFiles`, given relative to the directory of the test file,
   are copied into the working directory under their file names, without their directories.
-- **The input file is removed after its run** with the `argument` and `rename` input methods, so that it is not
-  mistaken for an output.
+- **The input file is removed after its run**, whatever the input method, so that it is not mistaken for an output.
 - **Standard output and error** are written to the files `stdout` and `stderr` of the working directory, which each
   input overwrites. Use `file: stdout` to check the standard output.
 - **Matches are checked only after a successful execution**: a zero exit code, or a non-zero one with
@@ -609,6 +608,8 @@ The launcher is prefixed to the command, with the number of processes given by `
 ```
 mpiexec -np 4 solver.x case_01.in
 ```
+
+`MPIEXEC` can include options of the launcher, e.g. `MPIEXEC="mpirun --oversubscribe"`.
 
 Different inputs can use different numbers of processes:
 

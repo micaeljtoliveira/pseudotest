@@ -8,6 +8,7 @@ Accepts an ``OutputFormatter`` via constructor so that presentation can be swapp
 
 import logging
 import os
+import shlex
 import shutil
 import subprocess
 import time
@@ -192,6 +193,8 @@ class TestExecutor:
         flag for that launcher (e.g. ``-np`` for *mpiexec*/*mpirun*,
         ``-n`` for *srun*/*aprun*).  The mapping lives in
         :data:`_MPI_NP_FLAG`; unrecognised launchers default to ``-np``.
+        ``MPIEXEC`` can include options of the launcher, e.g.
+        ``mpirun --oversubscribe``, and is split like a shell command.
         """
 
         if input_method == "argument":
@@ -215,9 +218,9 @@ class TestExecutor:
             processors = 1
             if input_config is not None:
                 processors = input_config.get("Processors", 1)
-            launcher_name = Path(mpiexec).name
-            np_flag = _MPI_NP_FLAG.get(launcher_name, _DEFAULT_NP_FLAG)
-            command_args = [mpiexec, np_flag, str(processors), *command_args]
+            launcher = shlex.split(mpiexec)
+            np_flag = _MPI_NP_FLAG.get(Path(launcher[0]).name, _DEFAULT_NP_FLAG)
+            command_args = [*launcher, np_flag, str(processors), *command_args]
             logging.info(f"MPI execution: {mpiexec} {np_flag} {processors}")
 
         return command_args, stdin_file
@@ -235,7 +238,7 @@ class TestExecutor:
         """Launch the subprocess and return ``(success, elapsed)``."""
 
         execution_success = False
-        start_time = time.time()
+        start_time = time.perf_counter()
 
         try:
             with (temp_dir / "stdout").open("w") as stdout_fh, (temp_dir / "stderr").open("w") as stderr_fh:
@@ -272,8 +275,8 @@ class TestExecutor:
         finally:
             if stdin_file:
                 stdin_file.close()
-            else:
-                (temp_dir / working_input_name).unlink(missing_ok=True)
+            # The input file is not an output, and the next inputs must not see it
+            (temp_dir / working_input_name).unlink(missing_ok=True)
 
-        execution_time = time.time() - start_time
+        execution_time = time.perf_counter() - start_time
         return execution_success, execution_time

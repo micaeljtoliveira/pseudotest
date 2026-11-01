@@ -14,7 +14,6 @@ The updated config is written back to the original file unless
 """
 
 import argparse
-import sys
 
 from pseudotest.cli_run import handle_errors, setup_logging
 from pseudotest.runner import PseudoTestRunner
@@ -98,7 +97,3 @@ def main(command_line_args: list[str] | None = None) -> int:
         ),
         parsed_args.verbose,
     )
-
-
-if __name__ == "__main__":  # pragma: no cover
-    sys.exit(main())

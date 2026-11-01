@@ -37,7 +37,7 @@ def broadcast_params(params: ChainMap[str, Any]) -> list[ChainMap[str, Any]]:
     # Broadcast parameters across all positions
     broadcasted_params = []
     for i in range(length):
-        param_set = ChainMap()
+        param_set: ChainMap[str, Any] = ChainMap()
         for key, value in params.items():
             param_set[key] = value[i] if isinstance(value, list) else value
         broadcasted_params.append(param_set)
@@ -71,7 +71,7 @@ class TestConfig:
         except Exception as e:
             raise UsageError(f"Failed to load test file {file}: {e}") from e
 
-        if not isinstance(data, Mapping):
+        if not isinstance(data, dict):
             raise UsageError(f"Test file {file} must contain a mapping of test parameters")
         if "Name" not in data:
             raise UsageError(f"Test file {file} has no 'Name'")

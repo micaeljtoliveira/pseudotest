@@ -120,7 +120,3 @@ def main(command_line_args: list[str] | None = None) -> int:
         ),
         parsed_args.verbose,
     )
-
-
-if __name__ == "__main__":  # pragma: no cover
-    sys.exit(main())

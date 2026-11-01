@@ -16,6 +16,7 @@ preserving comments and formatting.
 
 import logging
 import math
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +48,9 @@ def compute_tolerance(difference: float) -> float:
     padded = difference * 1.1
     magnitude = math.floor(math.log10(padded))
     factor = 10 ** (magnitude - 1)
-    raw = math.ceil(padded / factor) * factor
+    # Rounding drops the noise of the floating-point operations before rounding up: -42.5050 - -42.5000 is
+    # 0.005000000000002558, which would otherwise give 0.0056 instead of 0.0055
+    raw = math.ceil(round(padded / factor, 9)) * factor
     ndigits = -(magnitude - 1)
     return round(raw, ndigits)
 
@@ -109,7 +112,8 @@ def _make_scalar_float(value: float, template: ScalarFloat) -> ScalarFloat:
     m_lead0 = getattr(template, "_m_lead0", 0)
     m_sign = "-" if value < 0 else ("+" if t_sign == "+" else False)
 
-    if getattr(template, "_exp", None):
+    t_exp = getattr(template, "_exp", None)
+    if t_exp:
         # ruamel.yaml counts the sign in the mantissa's _prec but not in its
         # _width, so only _prec changes when the sign does.  Leading zeros in
         # the mantissa would cost digits (and break negative values).
@@ -120,9 +124,9 @@ def _make_scalar_float(value: float, template: ScalarFloat) -> ScalarFloat:
             prec=new_prec,
             m_sign=m_sign,
             m_lead0=0,
-            exp=template._exp,
-            e_width=template._e_width,
-            e_sign=template._e_sign,
+            exp=t_exp,
+            e_width=getattr(template, "_e_width", None),
+            e_sign=getattr(template, "_e_sign", None),
         )
 
     # decimal_places = characters after '.' in the template representation
@@ -152,7 +156,7 @@ MatchResult = tuple[int, bool, str | None, Any]
 
 
 def apply_match_updates(
-    match_def: dict[str, Any],
+    match_def: MutableMapping[str, Any],
     results: list[MatchResult],
     total: int,
     mode: str,
@@ -193,7 +197,7 @@ def apply_match_updates(
 
 
 def _update_tolerance(
-    match_def: dict[str, Any],
+    match_def: MutableMapping[str, Any],
     index: int,
     total: int,
     calculated_value: str,
@@ -244,7 +248,7 @@ def _update_tolerance(
 
 
 def _update_reference(
-    match_def: dict[str, Any],
+    match_def: MutableMapping[str, Any],
     index: int,
     total: int,
     calculated_value: str,

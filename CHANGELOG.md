@@ -23,9 +23,19 @@ These changes can change the result of existing test files:
 - Python 3.10 or later is required, as the code already needed it.
 - Match types registered with `register_match_handler` are tried before the built-in ones, which handle any match with
   a `file` or a `directory`. A new match type using `file` could not be used before.
+- The input file is removed from the working directory after its run with the `stdin` input method too, as with the
+  other methods.
+
+### Added
+
+- `python -m pseudotest` runs `pseudotest`.
+- `MPIEXEC` can include options of the launcher, e.g. `mpirun --oversubscribe`.
 
 ### Fixed
 
+- `pseudotest-update -t` no longer rounds floating-point noise up: a difference of `0.005` gave a tolerance of `0.0056`
+  instead of `0.0055`.
+- The parameters of a match are written to the report in their order; their order changed from run to run.
 - A value that cannot be extracted (missing file, pattern not found, field out of range) is reported as a failure with
   its reason; nothing was printed.
 - The details of a tolerance below the precision of the calculated value are printed on separate lines, with the
