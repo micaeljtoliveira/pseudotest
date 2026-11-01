@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from pseudotest import matchers
 from pseudotest.cli_run import main
 from pseudotest.cli_update import main as update_main
 
@@ -90,3 +91,19 @@ def run_update():
         return update_main(args)
 
     return _factory
+
+
+@pytest.fixture
+def restore_match_registry():
+    """Restore the match handlers and key sets changed by a test that registers a match handler.
+
+    The key sets are restored in place, as other modules hold references to them.
+    """
+    handlers = list(matchers._MATCH_HANDLERS)
+    key_sets = [matchers.RESERVED_KEYS, matchers.REFERENCE_KEYS, matchers.INTERNAL_KEYS, matchers.NON_UPDATABLE_KEYS]
+    saved_key_sets = [set(key_set) for key_set in key_sets]
+    yield
+    matchers._MATCH_HANDLERS[:] = handlers
+    for key_set, saved in zip(key_sets, saved_key_sets, strict=True):
+        key_set.clear()
+        key_set.update(saved)

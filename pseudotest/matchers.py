@@ -10,6 +10,7 @@ import logging
 import math
 from collections import ChainMap
 from collections.abc import Callable
+from itertools import chain
 from pathlib import Path
 from typing import Any
 
@@ -30,13 +31,33 @@ from pseudotest.value_extractors import (
 MatchPredicate = Callable[[ChainMap[str, Any]], bool]
 MatchHandler = Callable[[Path, ChainMap[str, Any]], tuple[str | None, Any]]
 
+# Handlers registered by users, which are evaluated before the built-in ones
 _MATCH_HANDLERS: list[tuple[MatchPredicate, MatchHandler]] = []
+_BUILTIN_MATCH_HANDLERS: list[tuple[MatchPredicate, MatchHandler]] = []
 
 # Accumulated key sets. These are populated by register_match_handler()
 RESERVED_KEYS: set[str] = set()
 REFERENCE_KEYS: set[str] = set()
 INTERNAL_KEYS: set[str] = set()
 NON_UPDATABLE_KEYS: set[str] = set()
+
+
+def _register_keys(
+    keys: set[str] | None = None,
+    reference_keys: set[str] | None = None,
+    internal_keys: set[str] | None = None,
+    non_updatable_keys: set[str] | None = None,
+) -> None:
+    """Add the keys of a match handler to the key sets, see :func:`register_match_handler`."""
+    if keys:
+        RESERVED_KEYS.update(keys)
+    if reference_keys:
+        REFERENCE_KEYS.update(reference_keys)
+    if internal_keys:
+        INTERNAL_KEYS.update(internal_keys)
+        RESERVED_KEYS.update(internal_keys)
+    if non_updatable_keys:
+        NON_UPDATABLE_KEYS.update(non_updatable_keys)
 
 
 def register_match_handler(
@@ -50,8 +71,9 @@ def register_match_handler(
 ) -> None:
     """Register a match handler with an explicit selection predicate.
 
-    Handlers are evaluated in registration order; the first whose
-    *predicate(params)* returns ``True`` wins.
+    Handlers are evaluated in registration order, before the built-in ones,
+    which handle any match with a ``file`` or a ``directory``; the first
+    whose *predicate(params)* returns ``True`` wins.
 
     Args:
         predicate: A callable ``(params) -> bool`` that returns True when
@@ -69,15 +91,13 @@ def register_match_handler(
                             (added to :data:`NON_UPDATABLE_KEYS`).
     """
     _MATCH_HANDLERS.append((predicate, handler))
-    if keys:
-        RESERVED_KEYS.update(keys)
-    if reference_keys:
-        REFERENCE_KEYS.update(reference_keys)
-    if internal_keys:
-        INTERNAL_KEYS.update(internal_keys)
-        RESERVED_KEYS.update(internal_keys)
-    if non_updatable_keys:
-        NON_UPDATABLE_KEYS.update(non_updatable_keys)
+    _register_keys(keys, reference_keys, internal_keys, non_updatable_keys)
+
+
+def _register_builtin_handler(predicate: MatchPredicate, handler: MatchHandler, **key_sets: set[str]) -> None:
+    """Register a built-in match handler, evaluated after those registered with :func:`register_match_handler`."""
+    _BUILTIN_MATCH_HANDLERS.append((predicate, handler))
+    _register_keys(**key_sets)
 
 
 # =============================================================================
@@ -238,27 +258,22 @@ def _handle_content_from_file(filepath: Path, params: ChainMap[str, Any]) -> tup
 # ---------------------------------------------------------------------------
 
 # Shared keys used across all handlers
-register_match_handler(
-    predicate=lambda _: False,
-    handler=lambda _p, _c: (None, None),
-    keys={"tol", "protected"},
-    internal_keys={"match"},
-)
+_register_keys(keys={"tol", "protected"}, internal_keys={"match"})
 
-register_match_handler(
+_register_builtin_handler(
     predicate=lambda params: "directory" in params,
     handler=handle_directory_matches,
     keys={"directory", "count_files", "file_is_present"},
     reference_keys={"count_files", "file_is_present"},
     non_updatable_keys={"file_is_present"},
 )
-register_match_handler(
+_register_builtin_handler(
     predicate=lambda params: "file" in params and "size" in params,
     handler=handle_file_matches,
     keys={"file", "size"},
     reference_keys={"size"},
 )
-register_match_handler(
+_register_builtin_handler(
     predicate=lambda params: "file" in params and "size" not in params,
     handler=_handle_content_from_file,
     keys={"file", "grep", "field", "column", "line", "field_re", "field_im", "value", "count"},
@@ -292,7 +307,7 @@ def match(name: str, params: ChainMap[str, Any], work_dir: Path, indent_level: i
     filepath = work_dir / target
 
     # Route to the first registered handler whose predicate matches
-    for predicate, handler in _MATCH_HANDLERS:
+    for predicate, handler in chain(_MATCH_HANDLERS, _BUILTIN_MATCH_HANDLERS):
         if predicate(params):
             calculated_value, reference_value = handler(filepath, params)
             break

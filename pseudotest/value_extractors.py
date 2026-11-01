@@ -12,7 +12,8 @@ def get_target_line(lines: list[str], line_num: int) -> str | None:
 
     Supports both positive line numbers (0-indexed from start) and negative
     line numbers (counted from end).  This provides flexible line access
-    similar to standard Python list indexing.
+    similar to standard Python list indexing.  The 1-based ``line`` match
+    parameter is converted to this index by the matchers.
 
     Args:
         lines: File content as list of lines
@@ -24,8 +25,10 @@ def get_target_line(lines: list[str], line_num: int) -> str | None:
 
     Examples:
         >>> lines = ["first", "second", "third"]
-        >>> get_target_line(lines, 0)   # "first"
-        >>> get_target_line(lines, -1)  # "third"
+        >>> get_target_line(lines, 0)
+        'first'
+        >>> get_target_line(lines, -1)
+        'third'
     """
     if line_num >= 0:
         if line_num >= len(lines):
@@ -55,9 +58,12 @@ def find_pattern_line(lines: list[str], pattern: str, offset: int = 0) -> str | 
 
     Examples:
         >>> lines = ["hello world", "test pattern", "final line"]
-        >>> find_pattern_line(lines, "pattern", 0)  # "test pattern"
-        >>> find_pattern_line(lines, "pattern", 1)  # "final line"
-        >>> find_pattern_line(lines, "missing", 0)  # None
+        >>> find_pattern_line(lines, "pattern", 0)
+        'test pattern'
+        >>> find_pattern_line(lines, "pattern", 1)
+        'final line'
+        >>> find_pattern_line(lines, "missing", 0) is None
+        True
     """
     for i, line in enumerate(lines):
         if pattern in line:
@@ -87,11 +93,16 @@ def extract_field_from_line(line: str | None, field_num: int) -> str | None:
         commas), or None if line is None or field number is out of bounds
 
     Examples:
-        >>> extract_field_from_line("first second third", 2)   # "second"
-        >>> extract_field_from_line("first,second,third", 2)   # "second"
-        >>> extract_field_from_line("a,,b", 2)                 # ""
-        >>> extract_field_from_line("first second third", 5)   # None
-        >>> extract_field_from_line(None, 2)                   # None
+        >>> extract_field_from_line("first second third", 2)
+        'second'
+        >>> extract_field_from_line("first,second,third", 2)
+        'second'
+        >>> extract_field_from_line("a,,b", 2)
+        ''
+        >>> extract_field_from_line("first second third", 5) is None
+        True
+        >>> extract_field_from_line(None, 2) is None
+        True
     """
     if line is None:
         return None
@@ -120,12 +131,18 @@ def extract_column_from_line(line: str | None, column_pos: int) -> str | None:
         or None if line is None or column position is out of bounds
 
     Examples:
-        >>> extract_column_from_line("  hello world test", 3)   # "hello"
-        >>> extract_column_from_line("  hello world test", 9)   # "world"
-        >>> extract_column_from_line("  hello,world test", 3)   # "hello"
-        >>> extract_column_from_line("short", 10)               # None
-        >>> extract_column_from_line("   ", 1)                  # ""
-        >>> extract_column_from_line(None, 3)                   # None
+        >>> extract_column_from_line("  hello world test", 3)
+        'hello'
+        >>> extract_column_from_line("  hello world test", 9)
+        'world'
+        >>> extract_column_from_line("  hello,world test", 3)
+        'hello'
+        >>> extract_column_from_line("short", 10) is None
+        True
+        >>> extract_column_from_line("   ", 1)
+        ''
+        >>> extract_column_from_line(None, 3) is None
+        True
     """
     if line is None:
         return None
