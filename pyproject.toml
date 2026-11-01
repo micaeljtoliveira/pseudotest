@@ -32,7 +32,6 @@ devel = [
 ]
 test = [
     "pytest>=6.0",
-    "pytest-mock",
     "pytest-cov",
 ]
 docs = [
@@ -49,7 +48,8 @@ Repository = "https://github.com/micaeljtoliveira/pseudotest"
 Issues = "https://github.com/micaeljtoliveira/pseudotest/issues"
 
 [tool.pytest.ini_options]
-addopts = ["--cov=pseudotest", "--cov-report=term", "--cov-report=html", "--doctest-modules"]
+addopts = ["--cov=pseudotest", "--cov-report=term", "--doctest-modules"]
+filterwarnings = ["error"]
 # The package is listed for the examples of its docstrings, which are run as doctests
 testpaths = ["tests", "pseudotest"]
 

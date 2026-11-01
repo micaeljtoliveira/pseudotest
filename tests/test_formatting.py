@@ -1,8 +1,11 @@
 """Unit tests for pseudotest.formatting."""
 
 import io
+import logging
 from pathlib import PosixPath
 from unittest.mock import patch
+
+import pytest
 
 from pseudotest.formatting import Colors, OutputFormatter
 
@@ -66,3 +69,25 @@ class TestPrintExecutionOutput:
             formatter = OutputFormatter()
             formatter.print_execution_output(tmp_path, "test_input.txt")
         # The exception is caught and logged at DEBUG level; nothing printed for stdout
+
+
+class TestLongExecutionOutput:
+    @pytest.fixture
+    def work_dir(self, tmp_path):
+        (tmp_path / "stdout").write_text("".join(f"line {i}\n" for i in range(20)))
+        (tmp_path / "stderr").write_text("")
+        return tmp_path
+
+    def test_last_lines_shown(self, work_dir, capsys):
+        OutputFormatter().print_execution_output(work_dir, "input.txt")
+        out = capsys.readouterr().out
+        assert "showing last 10 lines" in out
+        assert "line 10\n" in out
+        assert "line 9\n" not in out
+
+    def test_all_lines_shown_in_debug(self, work_dir, capsys, caplog):
+        caplog.set_level(logging.DEBUG)
+        OutputFormatter().print_execution_output(work_dir, "input.txt")
+        out = capsys.readouterr().out
+        assert "showing last 10 lines" not in out
+        assert "line 0\n" in out

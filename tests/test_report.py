@@ -1,5 +1,7 @@
 """Unit tests for pseudotest.report."""
 
+from collections import ChainMap
+
 from pseudotest.config_updater import cast_like
 from pseudotest.report import ReportWriter
 from pseudotest.test_config import yaml
@@ -35,3 +37,30 @@ class TestWrite:
         ReportWriter.write(str(report_path), "a.yaml", {"Name": "A"}, {})
         ReportWriter.write(str(report_path), "b.yaml", {"Name": "B"}, {})
         assert [list(doc) for doc in yaml.load_all(report_path)] == [["a.yaml"], ["b.yaml"]]
+
+
+class TestBuildEntries:
+    def test_match_entry(self):
+        """The calculated value replaces the reference, which moves to 'reference'; internal keys are left out."""
+        params = ChainMap({"value": -42.5, "match": "energy", "grep": "Energy:"}, {"file": "results.txt", "tol": 0.1})
+        assert ReportWriter.build_match_entry(params, "-42.6") == {
+            "file": "results.txt",
+            "grep": "Energy:",
+            "tol": 0.1,
+            "value": -42.6,
+            "reference": -42.5,
+        }
+
+    def test_match_entry_without_calculated_value(self):
+        entry = ReportWriter.build_match_entry(ChainMap({"file": "out.txt", "size": 10}), None)
+        assert entry == {"file": "out.txt", "size": None, "reference": 10}
+
+    def test_input_entry(self):
+        scope = ChainMap({"Processors": 4}, {"InputMethod": "stdin"})
+        assert ReportWriter.build_input_entry(scope, False, True, 1.23456) == {
+            "InputMethod": "stdin",
+            "Processors": 4,
+            "ExpectedFailure": False,
+            "Execution": "pass",
+            "Elapsed time": 1.235,
+        }

@@ -1,27 +1,40 @@
 """Unit tests for pseudotest.cli_run and pseudotest.__init__."""
 
-from unittest.mock import MagicMock, patch
+import logging
+from unittest.mock import patch
+
+import pytest
 
 import pseudotest
 import pseudotest.cli_run
-from pseudotest.cli_run import handle_errors
+from pseudotest.cli_run import handle_errors, setup_logging
 from pseudotest.exceptions import ExitCode, UsageError
 
 
-class TestPackageMain:
-    """Cover pseudotest.main() which delegates to cli_run.main()."""
+class TestMain:
+    def test_arguments_passed_to_runner(self):
+        """pseudotest.main() is the pseudotest command."""
+        with patch.object(pseudotest.cli_run, "PseudoTestRunner") as runner_class:
+            runner_class.return_value.run.return_value = ExitCode.OK
+            args = ["test.yaml", "-D", "bin", "--preserve", "--timeout", "5", "--report", "report.yaml"]
+            assert pseudotest.main(args) == ExitCode.OK
+        runner_class.return_value.run.assert_called_once_with("test.yaml", "bin", True, 5, report_file="report.yaml")
 
-    def test_package_main_with_mock_runner(self):
-        """Calling pseudotest.main() delegates to cli_run.main() and creates a PseudoTestRunner."""
-        mock_run = MagicMock(return_value=0)
-        with patch.object(
-            pseudotest.cli_run,
-            "PseudoTestRunner",
-            lambda: type("R", (), {"run": mock_run})(),
-        ):
-            result = pseudotest.main(["test.yaml", "-D", "."])
-        mock_run.assert_called_once()
-        assert result == 0
+    def test_defaults(self):
+        with patch.object(pseudotest.cli_run, "PseudoTestRunner") as runner_class:
+            runner_class.return_value.run.return_value = ExitCode.TEST_FAILURE
+            assert pseudotest.main(["test.yaml"]) == ExitCode.TEST_FAILURE
+        runner_class.return_value.run.assert_called_once_with("test.yaml", ".", False, 600, report_file=None)
+
+
+class TestSetupLogging:
+    @pytest.mark.parametrize(
+        ("verbosity", "level"), [(0, logging.WARNING), (1, logging.INFO), (2, logging.DEBUG), (3, logging.DEBUG)]
+    )
+    def test_level(self, verbosity, level):
+        with patch.object(logging, "basicConfig") as basic_config:
+            setup_logging(verbosity)
+        assert basic_config.call_args.kwargs["level"] == level
 
 
 class TestHandleErrors:
