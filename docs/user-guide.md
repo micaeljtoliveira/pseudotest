@@ -552,6 +552,9 @@ pseudotest-update test.yaml -D ./bin --reference --output updated.yaml
 The original file is left untouched; the changes are written to `updated.yaml`. Comments and formatting are
 preserved in both cases.
 
+`pseudotest-update` also accepts the options of `pseudotest`: `-D`, `-p`, `-v`, and `--timeout` and `--report`,
+which only have long options, as `-t` and `-r` select the update mode.
+
 ### What is never updated
 
 - Matches with `protected: true`, set on the match or on one of its groups. This is useful for references obtained

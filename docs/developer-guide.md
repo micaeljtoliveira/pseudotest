@@ -100,9 +100,10 @@ User errors raise `UsageError` (a `CliError` with exit code 2):
   parameter.
 - `matchers.match()` and its handlers: no `file` or `directory`, `line: 0`, missing extraction parameters.
 
-Both entry points pass the run to `cli_run.handle_errors`, which turns a `CliError` into its exit code with a one-line
-`ERROR:` message, and any other exception into `ExitCode.INTERNAL` (99). With `-vv`, the traceback is printed too.
-`ExitCode.RUNTIME` (3) is reserved: nothing raises a plain `CliError` yet.
+Both entry points add their shared arguments with `cli_run.add_common_arguments`, and run the test with
+`cli_run.run_tests`, which passes the run to `cli_run.handle_errors`. It turns a `CliError` into its exit code with a
+one-line `ERROR:` message, and any other exception into `ExitCode.INTERNAL` (99). With `-vv`, the traceback is printed
+too. `ExitCode.RUNTIME` (3) is reserved: nothing raises a plain `CliError` yet.
 
 ## Configuration scoping
 
@@ -305,7 +306,8 @@ tolerance update jobs would undo each other. `inf` and `nan` are exact too.
 
 ## Config updater internals
 
-`apply_match_updates(match_def, results, mode)` iterates over the `MatchResult` of each broadcast element and patches
+`apply_match_updates(match_def, results, mode)`, where `mode` is an `UpdateMode` (`TOLERANCE`, `REFERENCE` or
+`REFERENCE_ALL`) or its value, iterates over the `MatchResult` of each broadcast element and patches
 the raw ruamel.yaml dict in-place. Protected matches, non-updatable reference keys and extraction failures are
 skipped.
 

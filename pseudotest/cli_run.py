@@ -13,6 +13,7 @@ import sys
 import traceback
 from collections.abc import Callable
 
+from pseudotest.config_updater import UpdateMode
 from pseudotest.exceptions import CliError, ExitCode
 from pseudotest.runner import PseudoTestRunner
 
@@ -68,6 +69,68 @@ def handle_errors(run: Callable[[], int], verbosity_level: int) -> int:
         return ExitCode.INTERNAL
 
 
+def add_common_arguments(
+    parser: argparse.ArgumentParser, *, timeout_flags: tuple[str, ...], report_flags: tuple[str, ...]
+) -> None:
+    """Add the arguments shared by ``pseudotest`` and ``pseudotest-update`` to *parser*.
+
+    The flags of the timeout and of the report differ between the commands, as ``-t`` and ``-r`` select the update mode
+    of ``pseudotest-update``.
+
+    Args:
+        parser: Parser of the command
+        timeout_flags: Flags of the timeout option
+        report_flags: Flags of the report option
+    """
+    parser.add_argument("test_file", help="YAML file describing the test to run")
+    parser.add_argument("-D", "--directory", default=".", help="Directory containing the executables")
+    parser.add_argument("-p", "--preserve", action="store_true", help="Preserve working directory after test")
+    parser.add_argument(
+        *timeout_flags,
+        dest="timeout",
+        type=int,
+        default=600,
+        help="Execution timeout of each input in seconds (default: 600, i.e., 10 minutes)",
+    )
+    parser.add_argument(
+        *report_flags, dest="report", default=None, metavar="FILE", help="Append a YAML execution report to FILE"
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase verbosity (-v for INFO, -vv for DEBUG)",
+    )
+
+
+def run_tests(args: argparse.Namespace, update_mode: UpdateMode | None = None, update_output: str | None = None) -> int:
+    """Run the test of the parsed command-line *args*, and return the exit code.
+
+    Args:
+        args: Command-line arguments, as added by :func:`add_common_arguments`
+        update_mode: Update mode of ``pseudotest-update``
+        update_output: Path where ``pseudotest-update`` writes the updated test file
+
+    Returns:
+        Exit code for the process
+    """
+    setup_logging(args.verbose)
+    test_runner = PseudoTestRunner()
+    return handle_errors(
+        lambda: test_runner.run(
+            args.test_file,
+            args.directory,
+            preserve_workdir=args.preserve,
+            timeout=args.timeout,
+            report_file=args.report,
+            update_mode=update_mode,
+            update_output=update_output,
+        ),
+        args.verbose,
+    )
+
+
 def main(command_line_args: list[str] | None = None) -> int:
     """Main entry point for command line execution.
 
@@ -80,43 +143,6 @@ def main(command_line_args: list[str] | None = None) -> int:
     argument_parser = argparse.ArgumentParser(
         prog="pseudotest",
         description="Regression testing utility for scientific software",
-        exit_on_error=True,
     )
-    argument_parser.add_argument("test_file", help="YAML file describing the test to run")
-    argument_parser.add_argument("-D", "--directory", default=".", help="Directory containing the executables")
-    argument_parser.add_argument("-p", "--preserve", action="store_true", help="Preserve working directory after test")
-    argument_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help="Increase verbosity (-v for INFO, -vv for DEBUG)",
-    )
-    argument_parser.add_argument(
-        "-t",
-        "--timeout",
-        type=int,
-        default=600,
-        help="Execution timeout in seconds (default: 600, i.e., 10 minutes)",
-    )
-    argument_parser.add_argument(
-        "-r",
-        "--report",
-        default=None,
-        metavar="FILE",
-        help="Write a YAML execution report to FILE",
-    )
-    parsed_args = argument_parser.parse_args(command_line_args)
-
-    setup_logging(parsed_args.verbose)
-    test_runner = PseudoTestRunner()
-    return handle_errors(
-        lambda: test_runner.run(
-            parsed_args.test_file,
-            parsed_args.directory,
-            parsed_args.preserve,
-            parsed_args.timeout,
-            report_file=parsed_args.report,
-        ),
-        parsed_args.verbose,
-    )
+    add_common_arguments(argument_parser, timeout_flags=("-t", "--timeout"), report_flags=("-r", "--report"))
+    return run_tests(argument_parser.parse_args(command_line_args))

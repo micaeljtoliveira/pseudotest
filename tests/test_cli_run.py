@@ -20,13 +20,36 @@ class TestMain:
             runner_class.return_value.run.return_value = ExitCode.OK
             args = ["test.yaml", "-D", "bin", "--preserve", "--timeout", "5", "--report", "report.yaml"]
             assert pseudotest.main(args) == ExitCode.OK
-        runner_class.return_value.run.assert_called_once_with("test.yaml", "bin", True, 5, report_file="report.yaml")
+        runner_class.return_value.run.assert_called_once_with(
+            "test.yaml",
+            "bin",
+            preserve_workdir=True,
+            timeout=5,
+            report_file="report.yaml",
+            update_mode=None,
+            update_output=None,
+        )
+
+    def test_short_options(self):
+        with patch.object(pseudotest.cli_run, "PseudoTestRunner") as runner_class:
+            runner_class.return_value.run.return_value = ExitCode.OK
+            assert pseudotest.main(["test.yaml", "-p", "-t", "5", "-r", "report.yaml"]) == ExitCode.OK
+        kwargs = runner_class.return_value.run.call_args.kwargs
+        assert (kwargs["preserve_workdir"], kwargs["timeout"], kwargs["report_file"]) == (True, 5, "report.yaml")
 
     def test_defaults(self):
         with patch.object(pseudotest.cli_run, "PseudoTestRunner") as runner_class:
             runner_class.return_value.run.return_value = ExitCode.TEST_FAILURE
             assert pseudotest.main(["test.yaml"]) == ExitCode.TEST_FAILURE
-        runner_class.return_value.run.assert_called_once_with("test.yaml", ".", False, 600, report_file=None)
+        runner_class.return_value.run.assert_called_once_with(
+            "test.yaml",
+            ".",
+            preserve_workdir=False,
+            timeout=600,
+            report_file=None,
+            update_mode=None,
+            update_output=None,
+        )
 
 
 class TestSetupLogging:
