@@ -5,6 +5,12 @@ All notable changes to `pseudotest` are listed here. The format is based on
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-02
+
+First stable release. Its public API, listed in the [Reference](docs/reference.md#public-api), follows semantic
+versioning: the command-line tools, the formats of the test files and of the reports, the exit codes, and the Python
+names exported by `pseudotest`.
+
 ### Changed
 
 These changes can change the result of existing test files:
@@ -20,7 +26,11 @@ These changes can change the result of existing test files:
   report kept only the last one.
 - An input in a subdirectory is copied into the working directory by its file name, and run with that name.
 - Fortran `D` exponents are compared as numbers, and equal infinities, or two nans, match.
-- Python 3.10 or later is required, as the code already needed it.
+- Python 3.11 or later is required: the code needed 3.10, which reached its end of life in October 2026. Python 3.14
+  is supported.
+- `ruamel.yaml` 0.17.21 or later is required, the oldest version tested.
+- The `scripts/` directory, which was not installed, is removed: the commands are installed by pip, and
+  `python -m pseudotest` runs `pseudotest`.
 - Match types registered with `register_match_handler` are tried before the built-in ones, which handle any match with
   a `file` or a `directory`. A new match type using `file` could not be used before.
 - The input file is removed from the working directory after its run with the `stdin` input method too, as with the
@@ -49,7 +59,9 @@ These changes can change the result of existing test files:
 - The reason of a failed extraction is precise: the file not found, the `grep` text not found, or the line, field or
   column out of range.
 - `python -m pseudotest` runs `pseudotest`.
-- `RunSummary`, `MatchResult` and `UpdateMode` can be imported from `pseudotest`.
+- `RunSummary`, `MatchResult`, `UpdateMode`, and `register_match_handler` and `ExtractionError` for new match types,
+  can be imported from `pseudotest`.
+- `-V/--version` shows the version of `pseudotest` and `pseudotest-update`.
 - `MPIEXEC` can include options of the launcher, e.g. `mpirun --oversubscribe`.
 
 ### Fixed
@@ -138,7 +150,8 @@ First release:
 - YAML reports.
 - `pseudotest-update` to update tolerances or reference values in place.
 
-[Unreleased]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/micaeljtoliveira/pseudotest/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.3.1...v1.0.0
 [0.3.1]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.1.0...v0.2.0

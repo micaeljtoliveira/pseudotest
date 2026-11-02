@@ -31,7 +31,7 @@ cd pseudotest
 pip install -e .                # add [devel,test] for development, [docs] for the documentation
 ```
 
-`pseudotest` requires Python 3.10 or later.
+`pseudotest` requires Python 3.11 or later.
 
 ## Quick start
 

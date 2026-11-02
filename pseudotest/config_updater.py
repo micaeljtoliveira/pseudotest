@@ -17,7 +17,7 @@ preserving comments and formatting.
 import logging
 import math
 from collections.abc import MutableMapping
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -154,7 +154,7 @@ def _make_scalar_float(value: float, template: ScalarFloat) -> ScalarFloat:
 # ---------------------------------------------------------------------------
 
 
-class UpdateMode(str, Enum):
+class UpdateMode(StrEnum):
     """What ``pseudotest-update`` changes in the test file.
 
     Being a ``str``, a mode can also be given by its value, e.g. ``"tolerance"``.

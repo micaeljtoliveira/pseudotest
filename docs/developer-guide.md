@@ -183,7 +183,7 @@ def my_handler(work_dir: Path, params: ChainMap[str, Any]) -> tuple[str, str]:
 The handler finds its files from its parameters, relative to the working directory. Register it:
 
 ```python
-from pseudotest.matchers import register_match_handler
+from pseudotest import register_match_handler
 
 register_match_handler(
     predicate=lambda params: "my_key" in params,
@@ -205,8 +205,7 @@ from collections import ChainMap
 from pathlib import Path
 from typing import Any
 
-from pseudotest.exceptions import ExtractionError
-from pseudotest.matchers import register_match_handler
+from pseudotest import ExtractionError, register_match_handler
 
 
 def handle_line_count(work_dir: Path, params: ChainMap[str, Any]) -> tuple[str, str]:
@@ -403,7 +402,8 @@ Prefer adding tests close to the changed behavior. For a new match handler, add:
 
 ## Contribution checklist
 
-1. Keep API and YAML behavior backward-compatible unless intentionally versioned.
+1. Keep the [public API](reference.md#public-api) backward-compatible: an incompatible change needs a new major
+   version. New public names are exported by `pseudotest/__init__.py`.
 2. Add or update tests for new logic and edge cases.
 3. Run `pytest`, `ruff check .` and `mypy`.
 4. Update the user guide, the reference, and the changelog for any user-facing behavior change.
