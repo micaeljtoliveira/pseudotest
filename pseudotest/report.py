@@ -12,10 +12,10 @@ from collections import ChainMap
 from pathlib import Path
 from typing import Any
 
+from pseudotest.config import yaml
 from pseudotest.config_updater import cast_like
 from pseudotest.matchers import INTERNAL_KEYS, RESERVED_KEYS
 from pseudotest.results import MatchResult
-from pseudotest.test_config import yaml
 
 
 class ReportWriter:

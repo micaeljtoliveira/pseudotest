@@ -13,14 +13,14 @@ from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
 
+from pseudotest.config import TestConfig, broadcast_params
 from pseudotest.config_updater import UpdateMode, apply_match_updates, save_config
-from pseudotest.exceptions import ExitCode, UsageError
+from pseudotest.exceptions import UsageError
 from pseudotest.executor import TestExecutor
 from pseudotest.formatting import Colors, OutputFormatter, display_match_result, display_match_status, indent
 from pseudotest.matchers import RESERVED_KEYS, match
 from pseudotest.report import ReportWriter
-from pseudotest.results import MatchResult
-from pseudotest.test_config import TestConfig, broadcast_params
+from pseudotest.results import MatchResult, RunSummary
 
 
 class PseudoTestRunner:
@@ -38,9 +38,8 @@ class PseudoTestRunner:
     ):
         self.colors = colors or Colors()
         self.executor = executor or TestExecutor(OutputFormatter(self.colors))
-        self.failed_executions = 0
-        self.failed_matches = 0
-        self.total_matches = 0
+        # Outcome of the current run, also filled by run_matches() when called on its own
+        self.summary = RunSummary("")
         self.update_mode: UpdateMode | None = None
         self.config_modified = False
 
@@ -132,10 +131,8 @@ class PseudoTestRunner:
             # Broadcast elements are named by the 'match' list, or by their index
             display_name = param_set.get("match", f"{match_name}[{i}]") if len(param_sets) > 1 else match_name
             result = match(display_name, param_set, work_dir)
-            display_match_result(result, nested_level)
-            self.total_matches += 1
-            if not result.passed:
-                self.failed_matches += 1
+            display_match_result(result, nested_level, self.colors)
+            self.summary.match_results.append(result)
             report_entries[display_name] = ReportWriter.build_match_entry(result)
             results.append(result)
 
@@ -178,11 +175,11 @@ class PseudoTestRunner:
 
         if expected_failure:
             execution_success = not execution_success
-            display_match_status("Failed execution", execution_success, indent_level=2)
+            display_match_status("Failed execution", execution_success, indent_level=2, colors=self.colors)
         else:
-            display_match_status("Execution", execution_success, indent_level=2)
+            display_match_status("Execution", execution_success, indent_level=2, colors=self.colors)
 
-        self.failed_executions += 0 if execution_success else 1
+        self.summary.failed_executions += 0 if execution_success else 1
 
         input_report = ReportWriter.build_input_entry(input_scope, expected_failure, execution_success, execution_time)
 
@@ -206,7 +203,7 @@ class PseudoTestRunner:
         report_file: str | None = None,
         update_mode: UpdateMode | str | None = None,
         update_output: str | None = None,
-    ) -> int:
+    ) -> RunSummary:
         """Main entry point for running tests.
 
         Args:
@@ -219,26 +216,24 @@ class PseudoTestRunner:
             update_output: Optional alternative path for updated config file
 
         Returns:
-            Exit code (0 for success, non-zero for failure)
+            The summary of the run, whose ``exit_code`` is the exit code of the command running the test
         """
         self.update_mode = UpdateMode(update_mode) if update_mode else None
         self.config_modified = False
-        self.failed_executions = 0
-        self.failed_matches = 0
-        self.total_matches = 0
 
         # Load and validate test configuration
         test_config_file = Path(test_file_path)
         test_config = TestConfig()
         test_config.load(test_config_file)
+        self.summary = RunSummary(test_config.data["Name"], enabled=test_config.data.get("Enabled", True))
 
         print(f"{self.colors.BLUE}***** {test_config.data['Name']} *****{self.colors.RESET}")
 
-        if not test_config.data.get("Enabled", True):
+        if not self.summary.enabled:
             print("Test disabled: skipping test")
             if report_file:
                 ReportWriter.write(report_file, test_file_path, test_config.data, {})
-            return ExitCode.OK
+            return self.summary
 
         test_config.validate()
 
@@ -272,13 +267,14 @@ class PseudoTestRunner:
         if self.update_mode and self.config_modified:
             output_path = Path(update_output) if update_output else test_config_file
             save_config(test_config.data, output_path)
+            self.summary.updated_file = output_path
             print(f"Updated {self.update_mode.description} in {output_path}")
 
-        return ExitCode.OK if (self.failed_executions == 0 and self.failed_matches == 0) else ExitCode.TEST_FAILURE
+        return self.summary
 
     def _print_summary(self) -> None:
         """Print the numbers of failed executions, of matches, and of failed matches."""
         print("Test Summary:")
-        print(f"{indent(1)}Failed executions : {self.failed_executions:-5}")
-        print(f"{indent(1)}Total matches     : {self.total_matches:-5}")
-        print(f"{indent(1)}Failed matches    : {self.failed_matches:-5}")
+        print(f"{indent(1)}Failed executions : {self.summary.failed_executions:-5}")
+        print(f"{indent(1)}Total matches     : {self.summary.total_matches:-5}")
+        print(f"{indent(1)}Failed matches    : {self.summary.failed_matches:-5}")

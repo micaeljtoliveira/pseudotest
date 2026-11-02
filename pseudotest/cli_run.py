@@ -126,7 +126,7 @@ def run_tests(args: argparse.Namespace, update_mode: UpdateMode | None = None, u
             report_file=args.report,
             update_mode=update_mode,
             update_output=update_output,
-        ),
+        ).exit_code,
         args.verbose,
     )
 

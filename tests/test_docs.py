@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
+from pseudotest.config import yaml
 from pseudotest.matchers import RESERVED_KEYS
-from pseudotest.test_config import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 # The developer guide is left out, as its example of a new match type uses a key that is not registered

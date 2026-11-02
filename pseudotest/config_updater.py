@@ -25,9 +25,9 @@ from ruamel.yaml.scalarbool import ScalarBoolean
 from ruamel.yaml.scalarfloat import ScalarFloat
 
 from pseudotest.comparator import get_precision_from_string_format, parse_number
+from pseudotest.config import yaml
 from pseudotest.matchers import NON_UPDATABLE_KEYS
 from pseudotest.results import MatchResult
-from pseudotest.test_config import yaml
 
 # ---------------------------------------------------------------------------
 # Tolerance computation

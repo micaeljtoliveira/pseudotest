@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from pseudotest.exceptions import ExitCode, ExtractionError
+from pseudotest.formatting import Colors
 from pseudotest.matchers import register_match_handler
 from pseudotest.runner import PseudoTestRunner
 
@@ -333,9 +334,66 @@ class TestExecution:
         ws.matches("wrong: {file: results.txt, grep: 'Energy:', field: 2, value: 1}")
         runner = PseudoTestRunner()
         runner.run(str(ws.test_file), str(ws.bin), False, 60)
-        runner.run(str(ws.test_file), str(ws.bin), False, 60)
-        assert runner.failed_matches == 1
-        assert runner.total_matches == 1
+        summary = runner.run(str(ws.test_file), str(ws.bin), False, 60)
+        assert (summary.total_matches, summary.failed_matches) == (1, 1)
+
+
+class TestPythonAPI:
+    def test_run_returns_summary(self, ws):
+        ws.mock()
+        ws.matches(
+            """\
+            energy: {file: results.txt, grep: 'Energy:', field: 2, value: -42.5000}
+            wrong: {file: results.txt, grep: Iterations, field: 2, value: 11}
+            """
+        )
+        summary = PseudoTestRunner().run(str(ws.test_file), str(ws.bin), False, 60)
+
+        assert summary.name == "Test"
+        assert (summary.enabled, summary.failed_executions) == (True, 0)
+        assert [(result.name, result.passed) for result in summary.match_results] == [
+            ("energy", True),
+            ("wrong", False),
+        ]
+        assert (summary.total_matches, summary.failed_matches, summary.passed) == (2, 1, False)
+        assert summary.exit_code == ExitCode.TEST_FAILURE
+        assert summary.updated_file is None
+
+    def test_update_mode_as_value(self, ws):
+        """The update mode can be given by its value, and the summary gives the updated file."""
+        ws.mock()
+        ws.matches("wrong: {file: results.txt, grep: Iterations, field: 2, value: 11}")
+        summary = PseudoTestRunner().run(str(ws.test_file), str(ws.bin), False, 60, update_mode="reference")
+        assert summary.updated_file == ws.test_file
+        assert ws.load_matches()["wrong"]["value"] == 10
+
+    def test_disabled_test(self, ws):
+        ws.config("Name: Disabled\nEnabled: false\nExecutable: missing.py\nInputs:\n  input.txt: {}\n")
+        summary = PseudoTestRunner().run(str(ws.test_file), str(ws.bin), False, 60)
+        assert (summary.name, summary.enabled, summary.total_matches, summary.exit_code) == (
+            "Disabled",
+            False,
+            0,
+            ExitCode.OK,
+        )
+
+    def test_colors_used_for_all_statuses(self, ws):
+        """The colors given to the runner are used for the executions and the matches."""
+        colors = Colors()
+        colors.BLUE, colors.RED, colors.GREEN, colors.RESET = "<b>", "<r>", "<g>", "</>"
+        ws.mock()
+        ws.matches(
+            """\
+            energy: {file: results.txt, grep: 'Energy:', field: 2, value: -42.5000}
+            wrong: {file: results.txt, grep: Iterations, field: 2, value: 11}
+            """
+        )
+        PseudoTestRunner(colors=colors).run(str(ws.test_file), str(ws.bin), False, 60)
+        out = ws.run_output()
+        assert "<b>***** Test *****</>" in out
+        assert re.search(r"Execution +\[<g> OK </>\]", out)
+        assert re.search(r"energy +\[<g> OK </>\]", out)
+        assert re.search(r"wrong +\[<r>FAIL</>\]", out)
 
 
 class TestMPI:

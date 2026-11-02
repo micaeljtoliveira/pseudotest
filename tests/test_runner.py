@@ -30,7 +30,7 @@ class TestRunMatches:
         runner = PseudoTestRunner()
         results = runner.run_matches(matches, work_dir)
 
-        assert (runner.total_matches, runner.failed_matches) == (3, 0)
+        assert (runner.summary.total_matches, runner.summary.failed_matches) == (3, 0)
         assert results["group"]["inherited"]["file"] == "a.txt"
         assert results["group"]["overridden"]["file"] == "b.txt"
         assert results["group"]["subgroup"]["nested"]["value"] == 2.0
@@ -40,7 +40,7 @@ class TestRunMatches:
         runner.run_matches(
             ChainMap({"energy": {"file": "a.txt", "grep": "Energy:", "field": 2, "value": 3.0}}), work_dir
         )
-        assert (runner.total_matches, runner.failed_matches) == (1, 1)
+        assert (runner.summary.total_matches, runner.summary.failed_matches) == (1, 1)
 
     def test_reserved_key_with_scalar_is_inherited_parameter(self, work_dir):
         """A parameter next to the matches is inherited, not evaluated as a match."""
@@ -49,7 +49,7 @@ class TestRunMatches:
             {"file": "a.txt", "energy": {"grep": "Energy:", "field": 2, "value": 1.0}}, work_dir
         )
         assert list(results) == ["energy"]
-        assert runner.total_matches == 1
+        assert runner.summary.total_matches == 1
 
     def test_error_locates_the_match(self, work_dir):
         with pytest.raises(UsageError, match="'Inputs > a.inp > Matches > group > energy'"):

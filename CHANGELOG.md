@@ -34,6 +34,11 @@ These changes can change the result of existing test files:
 - A `file_is_present` match passes when the file is in the directory, and its calculated value in the report is the
   name of the file; it was `"True"` or `"False"`.
 
+- **`PseudoTestRunner.run()` returns a `RunSummary`** instead of the exit code, which is its `exit_code`. The summary
+  holds the numbers of failed executions and of matches, the `MatchResult` of every match, and the updated test file.
+  It replaces the `failed_executions`, `total_matches` and `failed_matches` attributes of the runner.
+- The module `pseudotest.test_config` is renamed `pseudotest.config`, as its name looked like a test file.
+
 ### Added
 
 - `pseudotest-update` accepts `-p/--preserve` and `--report FILE`, as `pseudotest` does. Its timeout and report only
@@ -44,10 +49,13 @@ These changes can change the result of existing test files:
 - The reason of a failed extraction is precise: the file not found, the `grep` text not found, or the line, field or
   column out of range.
 - `python -m pseudotest` runs `pseudotest`.
+- `RunSummary`, `MatchResult` and `UpdateMode` can be imported from `pseudotest`.
 - `MPIEXEC` can include options of the launcher, e.g. `mpirun --oversubscribe`.
 
 ### Fixed
 
+- The colours given to `PseudoTestRunner` are used for the status of every execution and match; the statuses detected
+  the terminal on their own.
 - `pseudotest-update -t` no longer rounds floating-point noise up: a difference of `0.005` gave a tolerance of `0.0056`
   instead of `0.0055`.
 - The parameters of a match are written to the report in their order; their order changed from run to run.

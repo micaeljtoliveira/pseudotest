@@ -209,7 +209,7 @@ tests/solver.yaml:
 from pseudotest import PseudoTestRunner
 
 runner = PseudoTestRunner()
-exit_code = runner.run(
+summary = runner.run(
     test_file_path="test.yaml",
     executable_directory="./bin",
     preserve_workdir=False,
@@ -218,9 +218,28 @@ exit_code = runner.run(
     update_mode=None,  # None, or an UpdateMode, e.g. UpdateMode.TOLERANCE, or its value, e.g. "tolerance"
     update_output=None,  # optional path for the updated test file
 )
+
+print(summary.failed_matches, "of", summary.total_matches, "matches failed")
+for result in summary.match_results:
+    if not result.passed:
+        print(result.name, result.calculated, result.reference, result.reason)
 ```
 
-The update modes are `UpdateMode.TOLERANCE`, `UpdateMode.REFERENCE` and `UpdateMode.REFERENCE_ALL`, from
-`pseudotest.config_updater`, or their values `"tolerance"`, `"reference"` and `"reference_all"`, as for `-t`, `-r` and
+`run()` returns a `RunSummary`:
+
+| Attribute | Description |
+|---|---|
+| `name`, `enabled` | Name of the test, and whether it is enabled; a disabled test is not run |
+| `failed_executions` | Number of inputs whose execution failed |
+| `match_results` | `MatchResult` of each evaluated match, in order: `name`, `passed`, `status`, `calculated`, `reference`, `reference_key`, `tolerance`, `difference`, `precision` and `reason` |
+| `total_matches`, `failed_matches` | Numbers of evaluated and of failed matches |
+| `passed`, `exit_code` | Whether all executions and matches passed, and the corresponding exit code, `0` or `1` |
+| `updated_file` | Test file written by an update, if any |
+
+`RunSummary`, `MatchResult` and `UpdateMode` can be imported from `pseudotest`. `PseudoTestRunner(colors=...)` takes
+a `pseudotest.Colors`, used for all the output; by default, colours are used when the output is a terminal.
+
+The update modes are `UpdateMode.TOLERANCE`, `UpdateMode.REFERENCE` and `UpdateMode.REFERENCE_ALL`, or their
+values `"tolerance"`, `"reference"` and `"reference_all"`, as for `-t`, `-r` and
 `-R`. `run()` raises `pseudotest.exceptions.UsageError` for the usage errors listed above; the command-line tools turn
 it into exit code 2.

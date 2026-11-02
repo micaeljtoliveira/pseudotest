@@ -9,8 +9,10 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .cli_run import main
 from .cli_update import main as update_main
+from .config_updater import UpdateMode
 from .formatting import Colors
 from .report import ReportWriter
+from .results import MatchResult, RunSummary
 from .runner import PseudoTestRunner
 
 # The version is set by setuptools_scm from the git tags
@@ -20,4 +22,13 @@ except PackageNotFoundError:  # pragma: no cover
     __version__ = "unknown"
 __author__ = "Micael Oliveira"
 
-__all__ = ["PseudoTestRunner", "ReportWriter", "Colors", "main", "update_main"]
+__all__ = [
+    "PseudoTestRunner",
+    "RunSummary",
+    "MatchResult",
+    "UpdateMode",
+    "ReportWriter",
+    "Colors",
+    "main",
+    "update_main",
+]
