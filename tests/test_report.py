@@ -4,6 +4,7 @@ from collections import ChainMap
 
 from pseudotest.config_updater import cast_like
 from pseudotest.report import ReportWriter
+from pseudotest.results import MatchResult
 from pseudotest.test_config import yaml
 
 
@@ -43,14 +44,29 @@ class TestBuildEntries:
     def test_match_entry(self):
         """The calculated value replaces the reference, which moves to 'reference'; internal keys are left out."""
         params = ChainMap({"value": -42.5, "match": "energy", "grep": "Energy:"}, {"file": "results.txt", "tol": 0.1})
-        entry = ReportWriter.build_match_entry(params, "-42.6")
-        assert entry == {"file": "results.txt", "tol": 0.1, "value": -42.6, "reference": -42.5, "grep": "Energy:"}
+        result = MatchResult("energy", params, True, "-42.6", -42.5, "value", 0.1, difference=0.1)
+        entry = ReportWriter.build_match_entry(result)
+        assert entry == {
+            "file": "results.txt",
+            "tol": 0.1,
+            "value": -42.6,
+            "reference": -42.5,
+            "grep": "Energy:",
+            "status": "pass",
+        }
         # The order of the parameters is kept, with the inherited ones first
-        assert list(entry) == ["file", "tol", "value", "reference", "grep"]
+        assert list(entry) == ["file", "tol", "value", "reference", "grep", "status"]
 
-    def test_match_entry_without_calculated_value(self):
-        entry = ReportWriter.build_match_entry(ChainMap({"file": "out.txt", "size": 10}), None)
-        assert entry == {"file": "out.txt", "size": None, "reference": 10}
+    def test_match_entry_of_failed_extraction(self):
+        params = ChainMap({"file": "out.txt", "size": 10})
+        result = MatchResult("size", params, False, None, 10, "size", reason="'out.txt' not found")
+        assert ReportWriter.build_match_entry(result) == {
+            "file": "out.txt",
+            "size": None,
+            "reference": 10,
+            "status": "fail",
+            "reason": "'out.txt' not found",
+        }
 
     def test_input_entry(self):
         scope = ChainMap({"Processors": 4}, {"InputMethod": "stdin"})

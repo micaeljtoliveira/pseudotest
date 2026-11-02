@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pseudotest.exceptions import ExitCode
+from pseudotest.exceptions import ExitCode, ExtractionError
 from pseudotest.matchers import register_match_handler
 from pseudotest.runner import PseudoTestRunner
 
@@ -70,7 +70,7 @@ class TestMatches:
         result = ws.run()
         assert result.rc == ExitCode.TEST_FAILURE
         assert status_line(result.out, "missing_pattern") == "FAIL"
-        assert "No value found in 'results.txt'" in result.out
+        assert "'Not there' not found in 'results.txt'" in result.out
 
     def test_group_parameters_are_inherited(self, ws):
         ws.mock()
@@ -112,12 +112,12 @@ class TestMatches:
     def test_registered_match_type(self, ws, restore_match_registry):
         """The example of a new match type of the developer guide."""
 
-        def handle_line_count(filepath, params):
+        def handle_line_count(work_dir, params):
             try:
-                lines = filepath.read_text().splitlines()
-            except OSError:
-                return None, None
-            return str(len(lines)), params["line_count"]
+                lines = (work_dir / params["file"]).read_text().splitlines()
+            except OSError as e:
+                raise ExtractionError(f"'{params['file']}' cannot be read: {e.strerror}", "line_count") from e
+            return str(len(lines)), "line_count"
 
         register_match_handler(
             predicate=lambda params: "file" in params and "line_count" in params,

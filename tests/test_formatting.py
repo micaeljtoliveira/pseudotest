@@ -2,12 +2,14 @@
 
 import io
 import logging
+from collections import ChainMap
 from pathlib import PosixPath
 from unittest.mock import patch
 
 import pytest
 
-from pseudotest.formatting import Colors, OutputFormatter
+from pseudotest.formatting import Colors, OutputFormatter, display_match_result
+from pseudotest.results import MatchResult
 
 
 class TestColorsTTY:
@@ -91,3 +93,44 @@ class TestLongExecutionOutput:
         out = capsys.readouterr().out
         assert "showing last 10 lines" not in out
         assert "line 0\n" in out
+
+
+class TestDisplayMatchResult:
+    def _lines(self, capsys, result):
+        display_match_result(result, indent_level=0)
+        return [line.strip() for line in capsys.readouterr().out.splitlines()]
+
+    def test_passed(self, capsys):
+        lines = self._lines(capsys, MatchResult("energy", ChainMap(), True, "1.0", 1.0, "value"))
+        assert lines == ["energy" + " " * 53 + "[ OK ]"]
+
+    def test_tolerance_smaller_than_precision(self, capsys):
+        result = MatchResult("short", ChainMap(), False, "1.23", 1.23, "value", 1e-6, 0.0, 0.01, "reason")
+        assert self._lines(capsys, result)[1:] == [
+            "-" * 45,
+            "Unreliable comparison: the tolerance is smaller than the precision of the calculated value",
+            "Calculated value    : 1.23",
+            "Effective precision : 0.01",
+            "Tolerance           : 1e-06",
+            "Use a tolerance of at least 0.01, or print the value with more digits",
+            "-" * 45,
+        ]
+
+    def test_numeric_difference(self, capsys):
+        result = MatchResult("energy", ChainMap(), False, "10.0", 20.0, "value", 0.5, 10.0)
+        assert self._lines(capsys, result)[2:-1] == [
+            "Calculated value : 10.0",
+            "Reference value  : 20.0",
+            "Difference       : 10.0",
+            "Deviation [%]    : 50.000000",
+            "Tolerance        : 0.5",
+            "Tolerance [%]    : 2.500000",
+        ]
+
+    def test_string_difference(self, capsys):
+        result = MatchResult("status", ChainMap(), False, "converged", "diverged", "value")
+        assert self._lines(capsys, result)[2:-1] == ["Calculated value : 'converged'", "Expected value   : 'diverged'"]
+
+    def test_failed_extraction(self, capsys):
+        result = MatchResult("energy", ChainMap(), False, reason="'results.txt' not found")
+        assert self._lines(capsys, result)[2:-1] == ["'results.txt' not found"]

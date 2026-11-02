@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from pseudotest.config_updater import cast_like
-from pseudotest.matchers import INTERNAL_KEYS, REFERENCE_KEYS, RESERVED_KEYS
+from pseudotest.matchers import INTERNAL_KEYS, RESERVED_KEYS
+from pseudotest.results import MatchResult
 from pseudotest.test_config import yaml
 
 
@@ -25,21 +26,26 @@ class ReportWriter:
     """
 
     @staticmethod
-    def build_match_entry(params: ChainMap[str, Any], calculated_value: str | None) -> dict[str, Any]:
+    def build_match_entry(result: MatchResult) -> dict[str, Any]:
         """Build a report entry for a single leaf match.
 
         Includes the original match parameters, in their order with the
         inherited ones first, with the reference value replaced by the
-        calculated value, cast to the same type as the reference.
+        calculated value, cast to the same type as the reference, and the
+        reference value under ``reference``. Then come the status of the
+        match and, when it failed, the reason.
         """
         entry: dict[str, Any] = {}
-        for key in params:
+        for key in result.params:
             if key in RESERVED_KEYS and key not in INTERNAL_KEYS:
-                if key in REFERENCE_KEYS:
-                    entry[key] = cast_like(calculated_value, params[key])
-                    entry["reference"] = params[key]
+                if key == result.reference_key:
+                    entry[key] = cast_like(result.calculated, result.reference)
+                    entry["reference"] = result.reference
                 else:
-                    entry[key] = params[key]
+                    entry[key] = result.params[key]
+        entry["status"] = result.status
+        if result.reason:
+            entry["reason"] = result.reason
         return entry
 
     @staticmethod

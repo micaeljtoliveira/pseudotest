@@ -379,9 +379,12 @@ is out of range. The output gives the reason:
 ```
       missing_pattern                                      [FAIL]
         ---------------------------------------------
-        No value found in 'results.txt' (pattern not found, or line/field/column out of range)
+        'Not there' not found in 'results.txt'
         ---------------------------------------------
 ```
+
+Other reasons are, e.g., `'results.txt' not found`, `No line 10 in 'results.txt', which has 6 lines`, or
+`No field 5 in line 'Energy: -42.5000 Ry'`.
 
 ## Comparing values
 
@@ -635,8 +638,8 @@ pseudotest test.yaml -D ./bin --report results.yaml
 ```
 
 Several runs can append to the same file, which then holds one document per run. The report lists, for every match,
-its parameters, the calculated value and the reference value; see [Report](reference.md#report) for its format. It is
-useful as a CI artifact or for further processing.
+its parameters, the calculated value, the reference value, its status (`pass` or `fail`), and the reason of a
+failure; see [Report](reference.md#report) for its format. It is useful as a CI artifact or for further processing.
 
 ## Troubleshooting
 
@@ -660,8 +663,8 @@ Add `-vv` to see the traceback.
 
 ### A value cannot be extracted
 
-The failure gives the reason: the file does not exist, or no value was found in it. Add `-p` and open the file in the
-working directory to check that `grep` matches a line, and that `line`, `field` or `column` are in range.
+The failure gives the reason: the file does not exist, the `grep` text is not in it, or the line, field or column is
+out of range. Add `-p` to keep the working directory, and open the file there to check it.
 
 ### Timeouts
 

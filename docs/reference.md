@@ -180,14 +180,24 @@ tests/solver.yaml:
           value: -42.5001
           reference: -42.5000
           tol: 0.0001
+          status: pass
+        Band Gap:
+          file: bands.txt
+          grep: Band gap
+          column: 21
+          value:
+          reference: 1.0342
+          status: fail
+          reason: "'Band gap' not found in 'bands.txt'"
 ```
 
 - The document is keyed by the test file as given on the command line, without a leading `./`.
 - `Execution` is `pass` or `fail`, after taking `ExpectedFailure` into account. `Matches` is absent when the
   execution failed.
-- Each match lists its parameters, including the inherited ones. The reference parameter (`value` above) holds the
-  calculated value, and `reference` the reference value. Groups are nested mappings, and broadcast elements appear
-  under their own names.
+- Each match lists its parameters, in their order with the inherited ones first. The reference parameter (`value`
+  above) holds the calculated value, empty when none could be extracted, and `reference` the reference value. Then
+  come the `status` of the match, `pass` or `fail`, and the `reason` of a failure. Groups are nested mappings, and
+  broadcast elements appear under their own names.
 - A disabled test has `Enabled: false` and no inputs.
 
 ## Python API

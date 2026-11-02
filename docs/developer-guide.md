@@ -9,16 +9,18 @@ test file format, the command-line options and the exit codes, which are not rep
 pseudotest/
   cli_run.py            # Entry point: pseudotest, logging set-up and error handling
   cli_update.py         # Entry point: pseudotest-update
+  __main__.py           # python -m pseudotest
   runner.py             # Top-level orchestration (PseudoTestRunner)
   executor.py           # Subprocess execution and workdir/file preparation
   matchers.py           # Match dispatch and built-in match handlers
   value_extractors.py   # Pure text extraction helpers
   comparator.py         # Number parsing, numeric/string comparison and tolerance behavior
+  results.py            # MatchResult, the outcome of a match
   config_updater.py     # In-place YAML updates for tolerance/reference modes
   report.py             # Report entries and YAML serialization
   test_config.py        # YAML loading, validation, scope helpers, and broadcast expansion
-  formatting.py         # Terminal output, colors, and indentation
-  exceptions.py         # Exception classes and exit codes
+  formatting.py         # Terminal output (match results, failed executions), colors, and indentation
+  exceptions.py         # Exception classes (including ExtractionError) and exit codes
 tests/
   conftest.py              # Shared fixtures, including the `ws` workspace of the end-to-end tests
   test_e2e_run.py          # End-to-end tests: matches, input methods, execution
@@ -142,11 +144,11 @@ result = broadcast_params(params)
 ## Match system internals
 
 `pseudotest.matchers` maintains a registry of `(predicate, handler)` pairs: `_MATCH_HANDLERS` for the handlers
-registered with `register_match_handler()`, and `_BUILTIN_MATCH_HANDLERS` for the built-in ones. `match()` resolves
-the target path from `directory` (or else `file`), calls the first handler whose predicate returns `True` for the
-parameters, trying the registered handlers before the built-in ones, and compares the result with
-`comparator.match_compare_result`. When the handler returns no calculated
-value, `match()` reports the failure with its reason (the target does not exist, or no value was found in it).
+registered with `register_match_handler()`, and `_BUILTIN_MATCH_HANDLERS` for the built-in ones. `match(name, params,
+work_dir)` calls the first handler whose predicate returns `True` for the parameters, trying the registered handlers
+before the built-in ones. The handler extracts the calculated value, which `match()` compares with the reference
+value using `comparator.compare`. `match()` returns a `MatchResult` (see [Match results](#match-results)), and does
+not display anything.
 
 ### Key sets
 
@@ -164,17 +166,17 @@ Four sets are accumulated by `register_match_handler()`:
 Implement a handler with the signature:
 
 ```python
-def my_handler(target_path: Path, params: ChainMap[str, Any]) -> tuple[str | None, Any]:
-    """Return (calculated_value, reference_value).
+def my_handler(work_dir: Path, params: ChainMap[str, Any]) -> tuple[str, str]:
+    """Return (calculated_value, reference_key).
 
-    Return (None, None) to signal extraction failure (the match is reported as failed).
+    The calculated value is extracted from the files of the working directory, and the reference key is the parameter
+    holding the reference value. Raise ExtractionError(reason, reference_key) when no value can be extracted, e.g.
+    because a file or a pattern is missing: the match then fails with that reason.
     """
     ...
 ```
 
-The target path comes from the `file` or `directory` parameter, so a new match type must use one of them.
-
-Register it:
+The handler finds its files from its parameters, relative to the working directory. Register it:
 
 ```python
 from pseudotest.matchers import register_match_handler
@@ -199,17 +201,16 @@ from collections import ChainMap
 from pathlib import Path
 from typing import Any
 
+from pseudotest.exceptions import ExtractionError
 from pseudotest.matchers import register_match_handler
 
 
-def handle_line_count(filepath: Path, params: ChainMap[str, Any]) -> tuple[str | None, Any]:
+def handle_line_count(work_dir: Path, params: ChainMap[str, Any]) -> tuple[str, str]:
     try:
-        lines = filepath.read_text().splitlines()
-    except OSError:
-        return None, None
-    calculated = str(len(lines))
-    reference = params["line_count"]
-    return calculated, reference
+        lines = (work_dir / params["file"]).read_text().splitlines()
+    except OSError as e:
+        raise ExtractionError(f"'{params['file']}' cannot be read: {e.strerror}", "line_count") from e
+    return str(len(lines)), "line_count"
 
 
 register_match_handler(
@@ -231,6 +232,20 @@ Matches:
 ```
 
 After registering, add unit tests in `tests/test_matchers.py` and an end-to-end test in `tests/test_e2e_run.py`.
+
+In version 0.3 and earlier, handlers had the signature `(target_path, params) -> (calculated_value, reference_value)`, with
+the target path taken from `file` or `directory`, and returned `(None, None)` when no value could be extracted.
+
+### Match results
+
+A `results.MatchResult` holds everything known about an evaluated match: its name and parameters, whether it passed,
+the calculated and reference values, the reference key, the tolerance, the difference of a numeric comparison, the
+precision of the calculated value when the tolerance is smaller than it, and the reason of a failure. The runner
+passes each result to:
+
+- `formatting.display_match_result`, which prints the status of the match and, when it failed, the details;
+- `ReportWriter.build_match_entry`, which builds its report entry;
+- `config_updater.apply_match_updates`, which updates the test file, using the reference key of the result.
 
 ## Value extractors
 
@@ -269,7 +284,8 @@ by the matches and the next inputs.
 ## Comparison and tolerance behavior
 
 `comparator.parse_number` parses numbers, accepting Fortran `D` exponents; `is_number` is built on it.
-`match_compare_result` dispatches on whether both values are numbers:
+`compare(calculated, reference, tolerance)` returns a `Comparison` (passed, difference, precision, reason), and
+dispatches on whether both values are numbers:
 
 - **Numeric**: `abs(calculated - reference) <= tol`, or `== 0.0` without `tol`. Equal infinities, and two nans, have a
   difference of `0.0`.
@@ -279,8 +295,8 @@ When `tol` is set and the precision implied by the string format of the calculat
 (`get_precision_from_string_format`) is coarser than `tol`, the match is **unconditionally failed**. For example, a
 value printed as `1.234` has precision `0.001`; setting `tol: 1e-6` fails because the output cannot distinguish
 differences smaller than `0.001`. The failure details show the tolerance and the effective precision instead of the
-usual calculated/reference/difference lines, and suggest a minimum tolerance. Failure details are printed with
-`formatting.display_failure_details`.
+usual calculated/reference/difference lines, and suggest a minimum tolerance. Failure details are printed by
+`formatting.display_match_result`.
 
 A zero written in scientific notation (e.g. `0.00000000E+000`) has precision `0.0`: every non-zero value is written
 with its own exponent, so the zero is exact and any tolerance is accepted for it. Without this, a match that is
@@ -289,8 +305,9 @@ tolerance update jobs would undo each other. `inf` and `nan` are exact too.
 
 ## Config updater internals
 
-`apply_match_updates(match_def, results, total, mode)` iterates over broadcast results and patches the raw
-ruamel.yaml dict in-place. Protected matches, non-updatable reference keys and extraction failures are skipped.
+`apply_match_updates(match_def, results, mode)` iterates over the `MatchResult` of each broadcast element and patches
+the raw ruamel.yaml dict in-place. Protected matches, non-updatable reference keys and extraction failures are
+skipped.
 
 **Tolerance mode** (`_update_tolerance`):
 
@@ -302,7 +319,7 @@ ruamel.yaml dict in-place. Protected matches, non-updatable reference keys and e
 
 **Reference mode** (`_update_reference`):
 
-1. Identifies the reference key (the first key in `REFERENCE_KEYS` present in `match_def`).
+1. Takes the reference key of the result, and skips the update if the reference is inherited from a group.
 2. Skips, with a warning, a numeric reference that the calculated value would replace with text.
 3. Calls `cast_like(calculated_value, reference)` to match the original Python/YAML type.
 
@@ -337,11 +354,12 @@ YAML, keyed by `test_file_path` without a leading `./`, and appends it to `repor
 }
 ```
 
-`build_match_entry` constructs one entry per match with:
+`build_match_entry(result)` constructs one entry per match with:
 
 - all non-internal parameters of the match, in their order, with the inherited ones first;
-- the original reference value under the `reference` key;
-- the calculated value, cast with `cast_like`, under the reference key of the match handler.
+- the calculated value, cast with `cast_like`, under the reference key of the result, and the reference value under
+  the `reference` key;
+- `status`, `pass` or `fail`, and, for a failed match, the `reason`.
 
 Keys in `INTERNAL_KEYS` (currently just `match`) are excluded.
 

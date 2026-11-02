@@ -4,6 +4,9 @@ import logging
 import sys
 from pathlib import Path
 
+from pseudotest.comparator import parse_number
+from pseudotest.results import MatchResult
+
 INDENT_STEP = 2
 STATUS_COLUMN = 58
 
@@ -69,6 +72,51 @@ def display_failure_details(lines: list[str], indent_level: int = 2) -> None:
     for line in lines:
         print(f"{prefix}{line}")
     print(separator)
+
+
+def _failure_details(result: MatchResult) -> list[str]:
+    """Return the detail lines explaining why *result* failed."""
+    if result.calculated is None:
+        # No value could be extracted
+        return [result.reason or "No value extracted"]
+
+    if result.precision is not None:
+        return [
+            "Unreliable comparison: the tolerance is smaller than the precision of the calculated value",
+            f"Calculated value    : {result.calculated}",
+            f"Effective precision : {result.precision:g}",
+            f"Tolerance           : {result.tolerance}",
+            f"Use a tolerance of at least {result.precision:g}, or print the value with more digits",
+        ]
+
+    if result.difference is None:
+        return [f"Calculated value : '{result.calculated}'", f"Expected value   : '{result.reference}'"]
+
+    details = [
+        f"Calculated value : {result.calculated}",
+        f"Reference value  : {result.reference}",
+        f"Difference       : {result.difference}",
+    ]
+    reference = abs(parse_number(result.reference) or 0.0)
+    if reference > 1e-10:
+        details.append(f"Deviation [%]    : {result.difference / reference * 100.0:.6f}")
+    if result.tolerance:
+        details.append(f"Tolerance        : {result.tolerance}")
+        if reference > 1e-10:
+            details.append(f"Tolerance [%]    : {result.tolerance / reference * 100.0:.6f}")
+    return details
+
+
+def display_match_result(result: MatchResult, indent_level: int = 2) -> None:
+    """Display the status of a match and, when it failed, why.
+
+    Args:
+        result: Result of the match
+        indent_level: Nesting level of the match
+    """
+    display_match_status(result.name, result.passed, indent_level)
+    if not result.passed:
+        display_failure_details(_failure_details(result), indent_level)
 
 
 class OutputFormatter:
