@@ -99,3 +99,27 @@ def test_python_m_pseudotest(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as exit_info:
         runpy.run_module("pseudotest", run_name="__main__")
     assert exit_info.value.code == ExitCode.USAGE
+
+
+@pytest.mark.parametrize(
+    ("entry_point", "prog"), [(pseudotest.main, "pseudotest"), (pseudotest.update_main, "pseudotest-update")]
+)
+def test_version(entry_point, prog, capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        entry_point(["--version"])
+    assert exit_info.value.code == ExitCode.OK
+    assert capsys.readouterr().out == f"{prog} {pseudotest.__version__}\n"
+
+
+def test_public_api():
+    """The public API is exported by the package."""
+    for name in [
+        "PseudoTestRunner",
+        "RunSummary",
+        "MatchResult",
+        "UpdateMode",
+        "register_match_handler",
+        "ExtractionError",
+    ]:
+        assert name in pseudotest.__all__
+        assert hasattr(pseudotest, name)

@@ -109,6 +109,7 @@ pseudotest TEST_FILE [-D DIRECTORY] [-p] [-t TIMEOUT] [-r FILE] [-v | -vv]
 | `-t, --timeout TIMEOUT` | `600` | Timeout of each input, in seconds |
 | `-r, --report FILE` | — | Append a YAML report of the run to `FILE` |
 | `-v`, `-vv` | — | Show INFO or DEBUG messages; `-vv` also shows the full output of failed executions and the traceback of errors |
+| `-V, --version` | — | Show the version and exit |
 
 ### `pseudotest-update`
 
@@ -127,7 +128,7 @@ pseudotest-update TEST_FILE (-t | -r | -R) [-D DIRECTORY] [-o FILE] [-p] [--time
 | `-p, --preserve` | off | Keep the working directory after the run |
 | `--timeout TIMEOUT` | `600` | Timeout of each input, in seconds |
 | `--report FILE` | — | Append a YAML report of the run to `FILE` |
-| `-v`, `-vv` | — | As for `pseudotest` |
+| `-v`, `-vv`, `-V` | — | As for `pseudotest` |
 
 Exactly one of `-t`, `-r` and `-R` must be given. As they select the update mode, the timeout and the report only have
 long options, `--timeout` and `--report`, which are `-t` and `-r` for `pseudotest`.
@@ -202,6 +203,22 @@ tests/solver.yaml:
   come the `status` of the match, `pass` or `fail`, and the `reason` of a failure. Groups are nested mappings, and
   broadcast elements appear under their own names.
 - A disabled test has `Enabled: false` and no inputs.
+
+## Public API
+
+From version 1.0.0, `pseudotest` follows [semantic versioning](https://semver.org/): a change that is not backward
+compatible needs a new major version. Its public API is:
+
+- the command-line tools `pseudotest` and `pseudotest-update` (also `python -m pseudotest`), with their options and
+  exit codes;
+- the format of the test files, and the match parameters;
+- the format of the reports;
+- the Python names exported by the `pseudotest` package: `PseudoTestRunner`, `RunSummary`, `MatchResult`,
+  `UpdateMode`, `Colors`, `ReportWriter`, `main` and `update_main`, and, for new match types,
+  `register_match_handler` and `ExtractionError`.
+
+The modules of the package and everything they contain are internal, except for these names, and can change in any
+release. The texts of the messages are not part of the API either.
 
 ## Python API
 

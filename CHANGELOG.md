@@ -20,7 +20,11 @@ These changes can change the result of existing test files:
   report kept only the last one.
 - An input in a subdirectory is copied into the working directory by its file name, and run with that name.
 - Fortran `D` exponents are compared as numbers, and equal infinities, or two nans, match.
-- Python 3.10 or later is required, as the code already needed it.
+- Python 3.11 or later is required: the code needed 3.10, which reached its end of life in October 2026. Python 3.14
+  is supported.
+- `ruamel.yaml` 0.17.21 or later is required, the oldest version tested.
+- The `scripts/` directory, which was not installed, is removed: the commands are installed by pip, and
+  `python -m pseudotest` runs `pseudotest`.
 - Match types registered with `register_match_handler` are tried before the built-in ones, which handle any match with
   a `file` or a `directory`. A new match type using `file` could not be used before.
 - The input file is removed from the working directory after its run with the `stdin` input method too, as with the
@@ -49,7 +53,12 @@ These changes can change the result of existing test files:
 - The reason of a failed extraction is precise: the file not found, the `grep` text not found, or the line, field or
   column out of range.
 - `python -m pseudotest` runs `pseudotest`.
-- `RunSummary`, `MatchResult` and `UpdateMode` can be imported from `pseudotest`.
+- The [public API](docs/reference.md#public-api), which follows semantic versioning from 1.0.0, is defined in the
+  reference: the command-line tools, the formats of the test files and of the reports, the exit codes, and the Python
+  names exported by `pseudotest`.
+- `RunSummary`, `MatchResult`, `UpdateMode`, and `register_match_handler` and `ExtractionError` for new match types,
+  can be imported from `pseudotest`.
+- `-V/--version` shows the version of `pseudotest` and `pseudotest-update`.
 - `MPIEXEC` can include options of the launcher, e.g. `mpirun --oversubscribe`.
 
 ### Fixed
@@ -79,6 +88,8 @@ These changes can change the result of existing test files:
 
 ### Documentation
 
+- The developer guide describes the git workflow, OneFlow, and how to make releases and hotfixes. `AGENTS.md` gives
+  the instructions for coding agents.
 - The README is a short introduction, and the manual has a new [Reference](docs/reference.md) page listing every key,
   option and exit code, and the report format.
 - The user guide describes the execution model and the scopes, and its errors are fixed.

@@ -183,7 +183,7 @@ def my_handler(work_dir: Path, params: ChainMap[str, Any]) -> tuple[str, str]:
 The handler finds its files from its parameters, relative to the working directory. Register it:
 
 ```python
-from pseudotest.matchers import register_match_handler
+from pseudotest import register_match_handler
 
 register_match_handler(
     predicate=lambda params: "my_key" in params,
@@ -205,8 +205,7 @@ from collections import ChainMap
 from pathlib import Path
 from typing import Any
 
-from pseudotest.exceptions import ExtractionError
-from pseudotest.matchers import register_match_handler
+from pseudotest import ExtractionError, register_match_handler
 
 
 def handle_line_count(work_dir: Path, params: ChainMap[str, Any]) -> tuple[str, str]:
@@ -401,13 +400,74 @@ Prefer adding tests close to the changed behavior. For a new match handler, add:
    paths.
 2. End-to-end test in `test_e2e_run.py` using a mock executable that writes the expected output format.
 
+## Git workflow
+
+The project follows [OneFlow](https://www.endoflineblog.com/oneflow-a-git-branching-model-and-workflow): `main` is the
+only long-lived branch, and every other branch is short-lived and merged back into `main`. The instructions for coding
+agents, in `AGENTS.md`, follow the same workflow.
+
+### Features
+
+Changes, including fixes for the next release, are made on a `feature/<short-description>` branch started from
+`main`:
+
+```bash
+git switch -c feature/<short-description> main
+git push -u origin feature/<short-description>
+```
+
+Open a pull request to `main`. When CI passes and the pull request is approved, merge it with a merge commit and
+delete the branch. If `main` moved on, rebase the branch onto it before the pull request is reviewed, or merge `main`
+into it afterwards.
+
+### Releases
+
+Versions follow [semantic versioning](https://semver.org/) for the [public API](reference.md#public-api), and are
+taken from the git tags by setuptools_scm: no file holds the version.
+
+1. Start a release branch from the commit of `main` to release, usually its tip:
+
+    ```bash
+    git switch -c release/X.Y.Z main
+    ```
+
+2. Commit the release changes on it. In `CHANGELOG.md`, rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, with the
+   date of the release, add an empty `[Unreleased]` section above it, and update the links at the end of the file.
+   Only fixes found while preparing the release go to the release branch; features go to `main`.
+3. Push the branch and open a pull request to `main`, so that CI runs on it.
+4. When CI passes, tag the tip of the release branch and push the tag. The CD workflow then builds the package from
+   the tag and publishes it to PyPI:
+
+    ```bash
+    git tag vX.Y.Z release/X.Y.Z
+    git push origin vX.Y.Z
+    ```
+
+5. Merge the pull request **with a merge commit**, not squashed or rebased: the tagged commit must be in the history of
+   `main`, where setuptools_scm finds the tag of the last release. Then delete the branch. The documentation is
+   deployed when `main` is updated.
+
+### Hotfixes
+
+A fix of a released version that cannot wait for the next release is made on a hotfix branch, started from the tag of
+that release:
+
+1. `git switch -c hotfix/X.Y.Z vX.Y.W`, where `vX.Y.W` is the tag of the release to fix.
+2. Commit the fix, with its regression test, and a `[X.Y.Z] - YYYY-MM-DD` section of the changelog. When merging into
+   `main`, keep both this section and the `[Unreleased]` one of `main`.
+3. Push the branch, open a pull request to `main`, and, when CI passes, tag its tip `vX.Y.Z` and push the tag.
+4. Merge the pull request with a merge commit, and delete the branch. If a release branch is open, merge the hotfix
+   into it instead: the fix then reaches `main` with the release.
+
 ## Contribution checklist
 
-1. Keep API and YAML behavior backward-compatible unless intentionally versioned.
-2. Add or update tests for new logic and edge cases.
-3. Run `pytest`, `ruff check .` and `mypy`.
-4. Update the user guide, the reference, and the changelog for any user-facing behavior change.
-5. Keep match, update, and report semantics consistent. A new reference key must be added to `REFERENCE_KEYS` for
+1. Work on a `feature/` branch, see [Git workflow](#git-workflow).
+2. Keep the [public API](reference.md#public-api) backward-compatible: an incompatible change needs a new major
+   version. New public names are exported by `pseudotest/__init__.py`.
+3. Add or update tests for new logic and edge cases.
+4. Run `pytest`, `ruff check .` and `mypy`.
+5. Update the user guide, the reference, and the changelog for any user-facing behavior change.
+6. Keep match, update, and report semantics consistent. A new reference key must be added to `REFERENCE_KEYS` for
    update and report to handle it correctly.
 
 ## Documentation

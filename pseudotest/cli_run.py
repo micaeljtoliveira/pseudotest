@@ -13,6 +13,7 @@ import sys
 import traceback
 from collections.abc import Callable
 
+from pseudotest._version import __version__
 from pseudotest.config_updater import UpdateMode
 from pseudotest.exceptions import CliError, ExitCode
 from pseudotest.runner import PseudoTestRunner
@@ -82,6 +83,7 @@ def add_common_arguments(
         timeout_flags: Flags of the timeout option
         report_flags: Flags of the report option
     """
+    parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("test_file", help="YAML file describing the test to run")
     parser.add_argument("-D", "--directory", default=".", help="Directory containing the executables")
     parser.add_argument("-p", "--preserve", action="store_true", help="Preserve working directory after test")

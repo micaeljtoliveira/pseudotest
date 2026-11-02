@@ -48,9 +48,20 @@ CLI (cli_run.py / cli_update.py)        argument parsing, logging, error handlin
   that cannot be extracted is not an error: handlers raise `ExtractionError`, and the match fails with the reason.
 - `ruamel.yaml` round-trips the test files, so that `pseudotest-update` keeps their comments and formatting.
 
+## Public API
+
+From 1.0.0, the project follows semantic versioning. Its [public API](docs/reference.md#public-api) is the command-line
+tools and their options, the exit codes, the formats of the test files and reports, and the names exported by
+`pseudotest/__init__.py`. Everything else is internal.
+
+- Do not break the public API without being asked to: an incompatible change needs a new major version.
+- A new public name is exported by `pseudotest/__init__.py` and documented in the reference.
+- The oldest supported versions, Python 3.11 and `ruamel.yaml` 0.17.21, are tested by the `minimum-versions` CI job:
+  update it with `pyproject.toml`.
+
 ## Conventions
 
-- Python 3.10+, line length 120, ruff rules `E F B C4 SIM PTH UP I N C901` (complexity at most 10: extract helpers
+- Python 3.11+, line length 120, ruff rules `E F B C4 SIM PTH UP I N C901` (complexity at most 10: extract helpers
   instead of silencing it), fully annotated code checked by mypy.
 - Docstrings in Google style (`Args:`, `Returns:`, `Raises:`). Comments explain why, not what, and are sparse.
 - Write code that reads like the surrounding code: reuse the existing helpers, e.g. `parse_number`, `cast_like`,
@@ -74,7 +85,9 @@ CLI (cli_run.py / cli_update.py)        argument parsing, logging, error handlin
 
 ## Git workflow: OneFlow
 
-`main` is the only long-lived branch; all other branches are short-lived and merged back into it.
+`main` is the only long-lived branch; all other branches are short-lived and merged back into it. The procedures, for
+features, releases and hotfixes, are in the [Git workflow](docs/developer-guide.md#git-workflow) section of the
+developer guide.
 
 - Work on a branch named `feature/<short-description>`, started from `main`; never commit to `main` directly.
 - Open a pull request to `main`. Pull requests are merged with a merge commit.
