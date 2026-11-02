@@ -1,12 +1,12 @@
-"""Unit tests for pseudotest.test_config."""
+"""Unit tests for pseudotest.config."""
 
 from collections import ChainMap
 from pathlib import Path
 
 import pytest
 
+from pseudotest.config import TestConfig, broadcast_params
 from pseudotest.exceptions import UsageError
-from pseudotest.test_config import TestConfig, broadcast_params
 
 
 class TestConfigErrors:

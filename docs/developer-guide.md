@@ -15,10 +15,10 @@ pseudotest/
   matchers.py           # Match dispatch and built-in match handlers
   value_extractors.py   # Pure text extraction helpers
   comparator.py         # Number parsing, numeric/string comparison and tolerance behavior
-  results.py            # MatchResult, the outcome of a match
+  results.py            # MatchResult and RunSummary, the outcomes of a match and of a run
   config_updater.py     # In-place YAML updates for tolerance/reference modes
   report.py             # Report entries and YAML serialization
-  test_config.py        # YAML loading, validation, scope helpers, and broadcast expansion
+  config.py             # YAML loading, validation, scope helpers, and broadcast expansion
   formatting.py         # Terminal output (match results, failed executions), colors, and indentation
   exceptions.py         # Exception classes (including ExtractionError) and exit codes
 tests/
@@ -34,7 +34,8 @@ tests/
   test_comparator.py       # Unit tests for comparison logic
   test_config_updater.py   # Unit tests for match updates
   test_value_extractors.py # Unit tests for value extractors
-  test_test_config.py      # Unit tests for configuration loading and parameter broadcasting
+  test_config.py           # Unit tests for configuration loading and parameter broadcasting
+  test_results.py          # Unit tests for match results and run summaries
   test_cli_run.py          # Unit tests for the pseudotest entry point, logging and error handling
   test_cli_update.py       # Unit tests for the pseudotest-update entry point
   test_formatting.py       # Unit tests for output and display formatting
@@ -54,7 +55,9 @@ tests/
      value, compare, display) and applies the updates requested by `pseudotest-update`.
    - Collect the report entries.
 4. Remove the working directory (in a `finally` block, so also on errors), unless `--preserve` is given.
-5. Print the summary statistics, optionally write the YAML report and the updated test file, and return the exit code.
+5. Print the summary statistics, optionally write the YAML report and the updated test file, and return the
+   `RunSummary` of the run, which counts the failed executions and holds the `MatchResult` of every match. The
+   entry points exit with its `exit_code`.
 
 Key design choices:
 

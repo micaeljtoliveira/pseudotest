@@ -42,15 +42,16 @@ class Colors:
             self.RESET = ""
 
 
-def display_match_status(match_name: str, success: bool, indent_level: int = 2) -> None:
+def display_match_status(match_name: str, success: bool, indent_level: int = 2, colors: Colors | None = None) -> None:
     """Display the status of a match with appropriate formatting.
 
     Args:
         match_name: Name of the match to display
         success: Whether the match succeeded
         indent_level: Nesting level (each level = :data:`INDENT_STEP` spaces)
+        colors: Colors of the status (default: auto-detect TTY)
     """
-    colors = Colors()
+    colors = colors or Colors()
     prefix = indent(indent_level)
     name_width = STATUS_COLUMN - len(prefix)
 
@@ -107,14 +108,15 @@ def _failure_details(result: MatchResult) -> list[str]:
     return details
 
 
-def display_match_result(result: MatchResult, indent_level: int = 2) -> None:
+def display_match_result(result: MatchResult, indent_level: int = 2, colors: Colors | None = None) -> None:
     """Display the status of a match and, when it failed, why.
 
     Args:
         result: Result of the match
         indent_level: Nesting level of the match
+        colors: Colors of the status (default: auto-detect TTY)
     """
-    display_match_status(result.name, result.passed, indent_level)
+    display_match_status(result.name, result.passed, indent_level, colors)
     if not result.passed:
         display_failure_details(_failure_details(result), indent_level)
 

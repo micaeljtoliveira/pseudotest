@@ -5,6 +5,7 @@ from collections import ChainMap
 
 import pytest
 
+from pseudotest.config import yaml
 from pseudotest.config_updater import (
     _update_reference,
     _update_tolerance,
@@ -14,7 +15,6 @@ from pseudotest.config_updater import (
     save_config,
 )
 from pseudotest.results import MatchResult
-from pseudotest.test_config import yaml
 
 
 def _result(calculated: str, params: dict, reference_key: str = "value") -> MatchResult:

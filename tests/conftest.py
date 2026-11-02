@@ -17,7 +17,7 @@ import pytest
 from pseudotest import matchers
 from pseudotest.cli_run import main
 from pseudotest.cli_update import main as update_main
-from pseudotest.test_config import yaml
+from pseudotest.config import yaml
 
 # Files written by the default mock executable
 RESULTS = """\
@@ -142,6 +142,10 @@ class Workspace:
     def update(self, mode: str, *args: str, test_file: Path | None = None) -> RunResult:
         """Run ``pseudotest-update`` in *mode* (``-t``, ``-r`` or ``-R``) on the test file."""
         return self._call(update_main, [str(test_file or self.test_file), "-D", str(self.bin), mode, *args])
+
+    def run_output(self) -> str:
+        """Return the standard output written since the last call, e.g. by a run made with the Python API."""
+        return self._capsys.readouterr().out
 
     def load_config(self, path: Path | None = None) -> Any:
         """Load a YAML test file, by default the test file."""

@@ -24,7 +24,7 @@ from pseudotest.exceptions import ExitCode
 def test_update_mode(flag, mode):
     """pseudotest.update_main() is the pseudotest-update command."""
     with patch.object(pseudotest.cli_run, "PseudoTestRunner") as runner_class:
-        runner_class.return_value.run.return_value = ExitCode.OK
+        runner_class.return_value.run.return_value.exit_code = ExitCode.OK
         assert pseudotest.update_main(["test.yaml", flag]) == ExitCode.OK
     runner_class.return_value.run.assert_called_once_with(
         "test.yaml",
@@ -40,7 +40,7 @@ def test_update_mode(flag, mode):
 def test_options_passed_to_runner():
     """The options of pseudotest are available, with long names only for the timeout and the report."""
     with patch.object(pseudotest.cli_run, "PseudoTestRunner") as runner_class:
-        runner_class.return_value.run.return_value = ExitCode.TEST_FAILURE
+        runner_class.return_value.run.return_value.exit_code = ExitCode.TEST_FAILURE
         args = [
             "test.yaml",
             "-r",

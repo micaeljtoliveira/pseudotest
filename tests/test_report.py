@@ -2,10 +2,10 @@
 
 from collections import ChainMap
 
+from pseudotest.config import yaml
 from pseudotest.config_updater import cast_like
 from pseudotest.report import ReportWriter
 from pseudotest.results import MatchResult
-from pseudotest.test_config import yaml
 
 
 class TestCastLike:
