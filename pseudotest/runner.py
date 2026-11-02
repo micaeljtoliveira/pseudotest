@@ -16,9 +16,10 @@ from typing import Any
 from pseudotest.config_updater import apply_match_updates, save_config
 from pseudotest.exceptions import ExitCode, UsageError
 from pseudotest.executor import TestExecutor
-from pseudotest.formatting import Colors, OutputFormatter, display_match_status, indent
+from pseudotest.formatting import Colors, OutputFormatter, display_match_result, display_match_status, indent
 from pseudotest.matchers import RESERVED_KEYS, match
 from pseudotest.report import ReportWriter
+from pseudotest.results import MatchResult
 from pseudotest.test_config import TestConfig, broadcast_params
 
 
@@ -124,27 +125,28 @@ class PseudoTestRunner:
         else:
             nested_level = indent_level
 
-        results: dict[str, Any] = {}
-        update_results: list[tuple[int, bool, str | None, Any]] = []
+        report_entries: dict[str, Any] = {}
+        results: list[MatchResult] = []
 
         for i, param_set in enumerate(param_sets):
-            self.total_matches += 1
             # Broadcast elements are named by the 'match' list, or by their index
             display_name = param_set.get("match", f"{match_name}[{i}]") if len(param_sets) > 1 else match_name
-            match_success, calculated_value = match(display_name, param_set, work_dir, indent_level=nested_level)
-            if not match_success:
+            result = match(display_name, param_set, work_dir)
+            display_match_result(result, nested_level)
+            self.total_matches += 1
+            if not result.passed:
                 self.failed_matches += 1
-            results[display_name] = ReportWriter.build_match_entry(param_set, calculated_value)
-            update_results.append((i, match_success, calculated_value, param_set))
+            report_entries[display_name] = ReportWriter.build_match_entry(result)
+            results.append(result)
 
         if (
             self.update_mode
             and not combined_match_def.get("protected", False)
-            and apply_match_updates(match_definition, update_results, len(param_sets), self.update_mode)
+            and apply_match_updates(match_definition, results, self.update_mode)
         ):
             self.config_modified = True
 
-        return results
+        return report_entries
 
     def _run_input(
         self,

@@ -62,9 +62,13 @@ class TestReport:
             "value": -42.5,
             "reference": 999.0,
             "tol": 0.01,
+            "status": "fail",
+            "reason": "Difference larger than the tolerance",
         }
         assert matches["status"]["value"] == "converged"
         assert matches["status"]["reference"] == "converged"
+        assert matches["status"]["status"] == "pass"
+        assert "reason" not in matches["status"]
         # Groups are nested, and their parameters are listed with each match
         assert matches["results_group"]["iterations"]["file"] == "results.txt"
         assert matches["results_group"]["iterations"]["value"] == 10
@@ -74,6 +78,27 @@ class TestReport:
         # Broadcast elements are listed under their own names, without the internal 'match' key
         assert matches["m_iterations"]["value"] == 10
         assert "match" not in matches["m_energy"]
+
+    def test_failed_extraction(self, ws):
+        """A match whose value cannot be extracted has no calculated value, and the reason of the failure."""
+        ws.mock()
+        ws.matches(
+            """\
+            missing: {file: results.txt, grep: 'Not there', field: 2, value: 1.5}
+            present: {directory: output_dir, file_is_present: data_a.txt}
+            absent: {directory: output_dir, file_is_present: missing.txt}
+            """
+        )
+        assert ws.run("--report", str(ws.report)).rc == ExitCode.TEST_FAILURE
+
+        matches = ws.load_report()["Inputs"]["input.txt"]["Matches"]
+        assert matches["missing"]["value"] is None
+        assert matches["missing"]["reference"] == 1.5
+        assert matches["missing"]["reason"] == "'Not there' not found in 'results.txt'"
+        assert matches["present"]["file_is_present"] == "data_a.txt"
+        assert matches["present"]["status"] == "pass"
+        assert matches["absent"]["status"] == "fail"
+        assert matches["absent"]["reason"] == "'missing.txt' not found in 'output_dir'"
 
     @pytest.mark.parametrize(
         ("expected_failure", "execution"),

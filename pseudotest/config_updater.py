@@ -24,7 +24,8 @@ from ruamel.yaml.scalarbool import ScalarBoolean
 from ruamel.yaml.scalarfloat import ScalarFloat
 
 from pseudotest.comparator import get_precision_from_string_format, parse_number
-from pseudotest.matchers import NON_UPDATABLE_KEYS, REFERENCE_KEYS
+from pseudotest.matchers import NON_UPDATABLE_KEYS
+from pseudotest.results import MatchResult
 from pseudotest.test_config import yaml
 
 # ---------------------------------------------------------------------------
@@ -151,23 +152,17 @@ def _make_scalar_float(value: float, template: ScalarFloat) -> ScalarFloat:
 # Per-match update application
 # ---------------------------------------------------------------------------
 
-MatchResult = tuple[int, bool, str | None, Any]
-"""``(broadcast_index, success, calculated_value, param_set)``."""
-
 
 def apply_match_updates(
     match_def: MutableMapping[str, Any],
     results: list[MatchResult],
-    total: int,
     mode: str,
 ) -> bool:
     """Apply tolerance or reference updates to *match_def*.
 
     Args:
         match_def: The raw YAML dict for this match entry (modified in-place).
-        results: One ``(index, success, calculated_value, param_set)``
-                 tuple per broadcast element.
-        total: Total number of broadcast elements (``len(results)``).
+        results: Result of each broadcast element, in order.
         mode: ``"tolerance"``, ``"reference"``, or ``"reference_all"``.
 
     Returns:
@@ -177,21 +172,18 @@ def apply_match_updates(
     if match_def.get("protected", False):
         return False
 
-    # Skip matches whose reference key is marked non-updatable
-    ref_key = next((k for k in REFERENCE_KEYS if k in match_def), None)
-    if ref_key in NON_UPDATABLE_KEYS:
-        return False
-
     modified = False
-    for index, success, calculated_value, param_set in results:
-        # Skip extraction failures; in reference_all mode also process passing matches
-        if calculated_value is None or (success and mode != "reference_all"):
+    for index, result in enumerate(results):
+        # Skip extraction failures and non-updatable references; in reference_all mode also process passing matches
+        if result.calculated is None or result.reference_key in NON_UPDATABLE_KEYS:
+            continue
+        if result.passed and mode != "reference_all":
             continue
 
         if mode == "tolerance":
-            modified |= _update_tolerance(match_def, index, total, calculated_value, param_set)
+            modified |= _update_tolerance(match_def, index, len(results), result)
         elif mode in ("reference", "reference_all"):
-            modified |= _update_reference(match_def, index, total, calculated_value)
+            modified |= _update_reference(match_def, index, len(results), result)
 
     return modified
 
@@ -200,17 +192,12 @@ def _update_tolerance(
     match_def: MutableMapping[str, Any],
     index: int,
     total: int,
-    calculated_value: str,
-    param_set: Any,
+    result: MatchResult,
 ) -> bool:
     """Set or increase the ``tol`` key so the match would pass."""
-    # Locate the reference key in this parameter set
-    ref_key = next((k for k in REFERENCE_KEYS if k in param_set), None)
-    if ref_key is None:
-        return False
-
+    calculated_value = str(result.calculated)
     calculated = parse_number(calculated_value)
-    reference = parse_number(param_set[ref_key])
+    reference = parse_number(result.reference)
 
     # Tolerance only makes sense for numeric comparisons
     if calculated is None or reference is None:
@@ -218,11 +205,11 @@ def _update_tolerance(
 
     difference = abs(calculated - reference)
     if not math.isfinite(difference):
-        logging.warning(f"No tolerance can cover the difference between {calculated_value} and {param_set[ref_key]}")
+        logging.warning(f"No tolerance can cover the difference between {calculated_value} and {result.reference}")
         return False
     if difference == 0:
         # Check if the existing tolerance is smaller than the effective precision
-        existing_tol = param_set.get("tol") or 0
+        existing_tol = result.params.get("tol") or 0
         if not (existing_tol and existing_tol > 0):
             return False
         precision = get_precision_from_string_format(calculated_value)
@@ -236,7 +223,7 @@ def _update_tolerance(
     if total > 1:
         # Broadcast: ensure tol is a list of the right length
         if "tol" not in match_def:
-            existing = param_set.get("tol", 0)
+            existing = result.params.get("tol", 0)
             match_def["tol"] = [existing] * total
         elif not isinstance(match_def["tol"], list):
             match_def["tol"] = [match_def["tol"]] * total
@@ -251,11 +238,13 @@ def _update_reference(
     match_def: MutableMapping[str, Any],
     index: int,
     total: int,
-    calculated_value: str,
+    result: MatchResult,
 ) -> bool:
     """Replace a reference value with the calculated one."""
-    ref_key = next((k for k in REFERENCE_KEYS if k in match_def), None)
-    if ref_key is None:
+    calculated_value = str(result.calculated)
+    ref_key = result.reference_key
+    # A reference inherited from a group is not updated
+    if ref_key is None or ref_key not in match_def:
         return False
 
     original_ref = match_def[ref_key]

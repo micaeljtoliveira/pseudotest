@@ -26,8 +26,19 @@ These changes can change the result of existing test files:
 - The input file is removed from the working directory after its run with the `stdin` input method too, as with the
   other methods.
 
+- **New API for match handlers** registered with `register_match_handler`, which must be rewritten: a handler gets
+  the working directory and the parameters, finds its files itself, and returns the calculated value with the
+  parameter holding the reference value, `(work_dir, params) -> (calculated_value, reference_key)`. When no value can
+  be extracted, it raises `ExtractionError(reason, reference_key)` instead of returning `(None, None)`. See the
+  developer guide.
+- A `file_is_present` match passes when the file is in the directory, and its calculated value in the report is the
+  name of the file; it was `"True"` or `"False"`.
+
 ### Added
 
+- The report gives the `status` of each match, `pass` or `fail`, and the `reason` of a failure.
+- The reason of a failed extraction is precise: the file not found, the `grep` text not found, or the line, field or
+  column out of range.
 - `python -m pseudotest` runs `pseudotest`.
 - `MPIEXEC` can include options of the launcher, e.g. `mpirun --oversubscribe`.
 

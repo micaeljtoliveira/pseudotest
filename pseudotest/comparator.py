@@ -2,9 +2,7 @@
 
 import math
 import re
-from typing import Any
-
-from pseudotest.formatting import display_failure_details, display_match_status
+from typing import Any, NamedTuple
 
 # Fortran writes exponents with 'D' (e.g. 1.5D+00), which Python's float() does not accept
 _FORTRAN_EXPONENT = re.compile(r"(?<=[\d.])[dD](?=[+-]?\d)")
@@ -92,85 +90,55 @@ def get_precision_from_string_format(value_str: str) -> float:
 # ---------------------------------------------------------------------------
 
 
-def _numeric_failure_details(
-    calculated_value: str,
-    calculated: float,
-    reference_value: Any,
-    reference: float,
-    difference: float,
-    tolerance: float | None,
-) -> list[str]:
-    """Return the detail lines describing a failed numeric comparison."""
-    details = [
-        f"Calculated value : {calculated_value}",
-        f"Reference value  : {reference_value}",
-        f"Difference       : {difference}",
-    ]
-    if abs(reference) > 1e-10:
-        details.append(f"Deviation [%]    : {abs(calculated - reference) / abs(reference) * 100.0:.6f}")
-    if tolerance:
-        details.append(f"Tolerance        : {tolerance}")
-        if abs(reference) > 1e-10:
-            details.append(f"Tolerance [%]    : {tolerance / abs(reference) * 100.0:.6f}")
-    return details
+class Comparison(NamedTuple):
+    """Outcome of the comparison of a calculated value with its reference."""
+
+    passed: bool
+    # Absolute difference of a numeric comparison, None for strings
+    difference: float | None = None
+    # Precision of the calculated value, set when the tolerance is smaller than it
+    precision: float | None = None
+    # Why the comparison failed
+    reason: str | None = None
 
 
-def match_compare_result(
-    match_name: str,
-    calculated_value: str,
-    reference_value: Any,
-    tolerance: float | None = None,
-    indent_level: int = 2,
-) -> bool:
-    """Compare *calculated_value* against *reference_value* and display results.
+def compare(calculated_value: str, reference_value: Any, tolerance: float | None = None) -> Comparison:
+    """Compare *calculated_value* against *reference_value*.
 
-    Performs numerical comparison with tolerance for numeric values, or exact
-    string comparison for non-numeric values. Displays detailed comparison
-    results including differences, deviations, and tolerance information when
-    a match fails.
+    Performs a numerical comparison with tolerance when both values are numbers, or an exact string comparison
+    otherwise. A tolerance smaller than the precision of the calculated value, as printed, makes the comparison fail.
 
     Args:
-        match_name: Descriptive name for the match (used in output display)
         calculated_value: Value calculated/extracted by the matcher
         reference_value: Expected reference value to compare against
         tolerance: Optional numerical tolerance for floating point comparison.
                   If None, exact equality is required for numbers.
-        indent_level: Nesting level for output display
 
     Returns:
-        True if values match within tolerance (or exactly for strings),
-        False otherwise.
+        The outcome of the comparison.
     """
     calculated = parse_number(calculated_value)
     reference = parse_number(reference_value)
 
     if calculated is None or reference is None:
-        success = str(calculated_value) == str(reference_value)
-        details = [f"Calculated value : '{calculated_value}'", f"Expected value   : '{reference_value}'"]
-    else:
-        # Equal infinities, or two nans, match although their difference is nan
-        both_nan = math.isnan(calculated) and math.isnan(reference)
-        difference = 0.0 if calculated == reference or both_nan else abs(calculated - reference)
-        success = difference <= tolerance if tolerance else difference == 0.0
-        details = _numeric_failure_details(
-            calculated_value, calculated, reference_value, reference, difference, tolerance
-        )
+        if str(calculated_value) == str(reference_value):
+            return Comparison(True)
+        return Comparison(False, reason="Values differ")
 
-        # Check if tolerance is smaller than the effective precision — treat as error
-        if tolerance and tolerance > 0:
-            effective_precision = get_precision_from_string_format(calculated_value)
-            if tolerance < effective_precision:
-                success = False
-                details = [
-                    "Unreliable comparison: the tolerance is smaller than the precision of the calculated value",
-                    f"Calculated value    : {calculated_value}",
-                    f"Effective precision : {effective_precision:g}",
-                    f"Tolerance           : {tolerance}",
-                    f"Use a tolerance of at least {effective_precision:g}, or print the value with more digits",
-                ]
+    # Equal infinities, or two nans, match although their difference is nan
+    both_nan = math.isnan(calculated) and math.isnan(reference)
+    difference = 0.0 if calculated == reference or both_nan else abs(calculated - reference)
 
-    display_match_status(match_name, success, indent_level)
-    if not success:
-        display_failure_details(details, indent_level)
+    # A tolerance smaller than the effective precision cannot be checked: treat it as an error
+    if tolerance and tolerance > 0:
+        precision = get_precision_from_string_format(calculated_value)
+        if tolerance < precision:
+            return Comparison(
+                False, difference, precision, "Tolerance smaller than the precision of the calculated value"
+            )
 
-    return success
+    if difference <= tolerance if tolerance else difference == 0.0:
+        return Comparison(True, difference)
+    return Comparison(
+        False, difference, reason="Difference larger than the tolerance" if tolerance else "Values differ"
+    )
