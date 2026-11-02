@@ -5,12 +5,6 @@ All notable changes to `pseudotest` are listed here. The format is based on
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-11-02
-
-First stable release. Its public API, listed in the [Reference](docs/reference.md#public-api), follows semantic
-versioning: the command-line tools, the formats of the test files and of the reports, the exit codes, and the Python
-names exported by `pseudotest`.
-
 ### Changed
 
 These changes can change the result of existing test files:
@@ -59,6 +53,9 @@ These changes can change the result of existing test files:
 - The reason of a failed extraction is precise: the file not found, the `grep` text not found, or the line, field or
   column out of range.
 - `python -m pseudotest` runs `pseudotest`.
+- The [public API](docs/reference.md#public-api), which follows semantic versioning from 1.0.0, is defined in the
+  reference: the command-line tools, the formats of the test files and of the reports, the exit codes, and the Python
+  names exported by `pseudotest`.
 - `RunSummary`, `MatchResult`, `UpdateMode`, and `register_match_handler` and `ExtractionError` for new match types,
   can be imported from `pseudotest`.
 - `-V/--version` shows the version of `pseudotest` and `pseudotest-update`.
@@ -91,6 +88,8 @@ These changes can change the result of existing test files:
 
 ### Documentation
 
+- The developer guide describes the git workflow, OneFlow, and how to make releases and hotfixes. `AGENTS.md` gives
+  the instructions for coding agents.
 - The README is a short introduction, and the manual has a new [Reference](docs/reference.md) page listing every key,
   option and exit code, and the report format.
 - The user guide describes the execution model and the scopes, and its errors are fixed.
@@ -150,8 +149,7 @@ First release:
 - YAML reports.
 - `pseudotest-update` to update tolerances or reference values in place.
 
-[Unreleased]: https://github.com/micaeljtoliveira/pseudotest/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.3.1...v1.0.0
+[Unreleased]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.3.1...HEAD
 [0.3.1]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.1.0...v0.2.0
