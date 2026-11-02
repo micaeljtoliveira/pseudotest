@@ -5,6 +5,12 @@ All notable changes to `pseudotest` are listed here. The format is based on
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-02
+
+First stable release. Its public API, listed in the [Reference](docs/reference.md#public-api), follows semantic
+versioning: the command-line tools, the formats of the test files and of the reports, the exit codes, and the Python
+names exported by `pseudotest`.
+
 ### Changed
 
 These changes can change the result of existing test files:
@@ -149,7 +155,8 @@ First release:
 - YAML reports.
 - `pseudotest-update` to update tolerances or reference values in place.
 
-[Unreleased]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/micaeljtoliveira/pseudotest/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.3.1...v1.0.0
 [0.3.1]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/micaeljtoliveira/pseudotest/compare/v0.1.0...v0.2.0
