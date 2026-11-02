@@ -13,7 +13,7 @@ from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
 
-from pseudotest.config_updater import apply_match_updates, save_config
+from pseudotest.config_updater import UpdateMode, apply_match_updates, save_config
 from pseudotest.exceptions import ExitCode, UsageError
 from pseudotest.executor import TestExecutor
 from pseudotest.formatting import Colors, OutputFormatter, display_match_result, display_match_status, indent
@@ -41,7 +41,7 @@ class PseudoTestRunner:
         self.failed_executions = 0
         self.failed_matches = 0
         self.total_matches = 0
-        self.update_mode: str | None = None
+        self.update_mode: UpdateMode | None = None
         self.config_modified = False
 
     def run_matches(
@@ -204,7 +204,7 @@ class PseudoTestRunner:
         preserve_workdir: bool,
         timeout: int,
         report_file: str | None = None,
-        update_mode: str | None = None,
+        update_mode: UpdateMode | str | None = None,
         update_output: str | None = None,
     ) -> int:
         """Main entry point for running tests.
@@ -215,13 +215,13 @@ class PseudoTestRunner:
             preserve_workdir: Whether to preserve temporary working directory
             timeout: Execution timeout in seconds
             report_file: Optional path to write a YAML execution report
-            update_mode: Optional update mode (``"tolerance"``, ``"reference"`` or ``"reference_all"``)
+            update_mode: Optional update mode, or its value (``"tolerance"``, ``"reference"`` or ``"reference_all"``)
             update_output: Optional alternative path for updated config file
 
         Returns:
             Exit code (0 for success, non-zero for failure)
         """
-        self.update_mode = update_mode
+        self.update_mode = UpdateMode(update_mode) if update_mode else None
         self.config_modified = False
         self.failed_executions = 0
         self.failed_matches = 0
@@ -262,13 +262,7 @@ class PseudoTestRunner:
                 shutil.rmtree(temp_work_dir, ignore_errors=True)
                 logging.debug(f"Removed working directory: {temp_work_dir}")
 
-        # Display test summary
-        print("Test Summary:")
-        print(f"{indent(1)}Failed executions : {self.failed_executions:-5}")
-        print(f"{indent(1)}Total matches     : {self.total_matches:-5}")
-        print(f"{indent(1)}Failed matches    : {self.failed_matches:-5}")
-
-        exit_code = ExitCode.OK if (self.failed_executions == 0 and self.failed_matches == 0) else ExitCode.TEST_FAILURE
+        self._print_summary()
 
         # Write YAML report if requested
         if report_file:
@@ -278,12 +272,13 @@ class PseudoTestRunner:
         if self.update_mode and self.config_modified:
             output_path = Path(update_output) if update_output else test_config_file
             save_config(test_config.data, output_path)
-            if self.update_mode == "tolerance":
-                mode_desc = "tolerances"
-            elif self.update_mode == "reference_all":
-                mode_desc = "reference values (all)"
-            else:
-                mode_desc = "reference values"
-            print(f"Updated {mode_desc} in {output_path}")
+            print(f"Updated {self.update_mode.description} in {output_path}")
 
-        return exit_code
+        return ExitCode.OK if (self.failed_executions == 0 and self.failed_matches == 0) else ExitCode.TEST_FAILURE
+
+    def _print_summary(self) -> None:
+        """Print the numbers of failed executions, of matches, and of failed matches."""
+        print("Test Summary:")
+        print(f"{indent(1)}Failed executions : {self.failed_executions:-5}")
+        print(f"{indent(1)}Total matches     : {self.total_matches:-5}")
+        print(f"{indent(1)}Failed matches    : {self.failed_matches:-5}")

@@ -113,7 +113,7 @@ pseudotest TEST_FILE [-D DIRECTORY] [-p] [-t TIMEOUT] [-r FILE] [-v | -vv]
 ### `pseudotest-update`
 
 ```bash
-pseudotest-update TEST_FILE (-t | -r | -R) [-D DIRECTORY] [-o FILE] [--timeout TIMEOUT] [-v | -vv]
+pseudotest-update TEST_FILE (-t | -r | -R) [-D DIRECTORY] [-o FILE] [-p] [--timeout TIMEOUT] [--report FILE] [-v | -vv]
 ```
 
 | Option | Default | Description |
@@ -124,10 +124,13 @@ pseudotest-update TEST_FILE (-t | -r | -R) [-D DIRECTORY] [-o FILE] [--timeout T
 | `-R, --reference-all` | — | Replace the reference values of all matches, passing or failing, with the calculated values |
 | `-D, --directory DIRECTORY` | `.` | Directory containing the executables |
 | `-o, --output FILE` | — | Write the updated test file to `FILE` instead of overwriting `TEST_FILE` |
+| `-p, --preserve` | off | Keep the working directory after the run |
 | `--timeout TIMEOUT` | `600` | Timeout of each input, in seconds |
+| `--report FILE` | — | Append a YAML report of the run to `FILE` |
 | `-v`, `-vv` | — | As for `pseudotest` |
 
-Exactly one of `-t`, `-r` and `-R` must be given.
+Exactly one of `-t`, `-r` and `-R` must be given. As they select the update mode, the timeout and the report only have
+long options, `--timeout` and `--report`, which are `-t` and `-r` for `pseudotest`.
 
 ## Environment variables
 
@@ -212,10 +215,12 @@ exit_code = runner.run(
     preserve_workdir=False,
     timeout=600,
     report_file="report.yaml",  # optional
-    update_mode=None,  # None, "tolerance", "reference" or "reference_all"
+    update_mode=None,  # None, or an UpdateMode, e.g. UpdateMode.TOLERANCE, or its value, e.g. "tolerance"
     update_output=None,  # optional path for the updated test file
 )
 ```
 
-`run()` raises `pseudotest.exceptions.UsageError` for the usage errors listed above; the command-line tools turn it
-into exit code 2.
+The update modes are `UpdateMode.TOLERANCE`, `UpdateMode.REFERENCE` and `UpdateMode.REFERENCE_ALL`, from
+`pseudotest.config_updater`, or their values `"tolerance"`, `"reference"` and `"reference_all"`, as for `-t`, `-r` and
+`-R`. `run()` raises `pseudotest.exceptions.UsageError` for the usage errors listed above; the command-line tools turn
+it into exit code 2.

@@ -36,6 +36,10 @@ These changes can change the result of existing test files:
 
 ### Added
 
+- `pseudotest-update` accepts `-p/--preserve` and `--report FILE`, as `pseudotest` does. Its timeout and report only
+  have long options, as `-t` and `-r` select the update mode.
+- `UpdateMode` in `pseudotest.config_updater`, for the update modes of the Python API, which still accepts their values
+  such as `"tolerance"`.
 - The report gives the `status` of each match, `pass` or `fail`, and the `reason` of a failure.
 - The reason of a failed extraction is precise: the file not found, the `grep` text not found, or the line, field or
   column out of range.

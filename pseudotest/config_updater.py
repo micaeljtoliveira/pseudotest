@@ -17,6 +17,7 @@ preserving comments and formatting.
 import logging
 import math
 from collections.abc import MutableMapping
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -153,17 +154,37 @@ def _make_scalar_float(value: float, template: ScalarFloat) -> ScalarFloat:
 # ---------------------------------------------------------------------------
 
 
+class UpdateMode(str, Enum):
+    """What ``pseudotest-update`` changes in the test file.
+
+    Being a ``str``, a mode can also be given by its value, e.g. ``"tolerance"``.
+    """
+
+    TOLERANCE = "tolerance"
+    REFERENCE = "reference"
+    REFERENCE_ALL = "reference_all"
+
+    @property
+    def description(self) -> str:
+        """What the mode updates, for the messages."""
+        return {
+            UpdateMode.TOLERANCE: "tolerances",
+            UpdateMode.REFERENCE: "reference values",
+            UpdateMode.REFERENCE_ALL: "reference values (all)",
+        }[self]
+
+
 def apply_match_updates(
     match_def: MutableMapping[str, Any],
     results: list[MatchResult],
-    mode: str,
+    mode: UpdateMode | str,
 ) -> bool:
     """Apply tolerance or reference updates to *match_def*.
 
     Args:
         match_def: The raw YAML dict for this match entry (modified in-place).
         results: Result of each broadcast element, in order.
-        mode: ``"tolerance"``, ``"reference"``, or ``"reference_all"``.
+        mode: The update mode, or its value.
 
     Returns:
         ``True`` if at least one update was applied.
@@ -172,17 +193,18 @@ def apply_match_updates(
     if match_def.get("protected", False):
         return False
 
+    mode = UpdateMode(mode)
     modified = False
     for index, result in enumerate(results):
         # Skip extraction failures and non-updatable references; in reference_all mode also process passing matches
         if result.calculated is None or result.reference_key in NON_UPDATABLE_KEYS:
             continue
-        if result.passed and mode != "reference_all":
+        if result.passed and mode is not UpdateMode.REFERENCE_ALL:
             continue
 
-        if mode == "tolerance":
+        if mode is UpdateMode.TOLERANCE:
             modified |= _update_tolerance(match_def, index, len(results), result)
-        elif mode in ("reference", "reference_all"):
+        else:
             modified |= _update_reference(match_def, index, len(results), result)
 
     return modified

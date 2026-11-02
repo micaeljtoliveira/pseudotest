@@ -15,8 +15,8 @@ The updated config is written back to the original file unless
 
 import argparse
 
-from pseudotest.cli_run import handle_errors, setup_logging
-from pseudotest.runner import PseudoTestRunner
+from pseudotest.cli_run import add_common_arguments, run_tests
+from pseudotest.config_updater import UpdateMode
 
 
 def main(command_line_args: list[str] | None = None) -> int:
@@ -31,30 +31,16 @@ def main(command_line_args: list[str] | None = None) -> int:
     argument_parser = argparse.ArgumentParser(
         prog="pseudotest-update",
         description="Run regression tests and update the YAML config to fix match failures",
-        exit_on_error=True,
     )
-    argument_parser.add_argument("test_file", help="YAML file describing the test to run")
-    argument_parser.add_argument("-D", "--directory", default=".", help="Directory containing the executables")
-    argument_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help="Increase verbosity (-v for INFO, -vv for DEBUG)",
-    )
-    argument_parser.add_argument(
-        "--timeout",
-        type=int,
-        default=600,
-        help="Execution timeout in seconds (default: 600)",
-    )
+    # -t and -r select the update mode, so the timeout and the report only have long options
+    add_common_arguments(argument_parser, timeout_flags=("--timeout",), report_flags=("--report",))
 
     mode_group = argument_parser.add_mutually_exclusive_group(required=True)
     mode_group.add_argument(
         "-t",
         "--tolerance",
         action="store_const",
-        const="tolerance",
+        const=UpdateMode.TOLERANCE,
         dest="update_mode",
         help="Update tolerances to cover observed differences",
     )
@@ -62,7 +48,7 @@ def main(command_line_args: list[str] | None = None) -> int:
         "-r",
         "--reference",
         action="store_const",
-        const="reference",
+        const=UpdateMode.REFERENCE,
         dest="update_mode",
         help="Update reference values for failing matches",
     )
@@ -70,7 +56,7 @@ def main(command_line_args: list[str] | None = None) -> int:
         "-R",
         "--reference-all",
         action="store_const",
-        const="reference_all",
+        const=UpdateMode.REFERENCE_ALL,
         dest="update_mode",
         help="Update reference values for all matches, including passing ones",
     )
@@ -83,17 +69,4 @@ def main(command_line_args: list[str] | None = None) -> int:
         help="Write updated config to FILE instead of overwriting the original",
     )
     parsed_args = argument_parser.parse_args(command_line_args)
-
-    setup_logging(parsed_args.verbose)
-    test_runner = PseudoTestRunner()
-    return handle_errors(
-        lambda: test_runner.run(
-            parsed_args.test_file,
-            parsed_args.directory,
-            preserve_workdir=False,
-            timeout=parsed_args.timeout,
-            update_mode=parsed_args.update_mode,
-            update_output=parsed_args.output,
-        ),
-        parsed_args.verbose,
-    )
+    return run_tests(parsed_args, parsed_args.update_mode, parsed_args.output)

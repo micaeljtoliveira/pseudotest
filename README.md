@@ -71,7 +71,8 @@ and checks that its second field is `-42.5000` within `1e-4`.
 | `pseudotest-update TEST_FILE -D DIR -R` | Run the test and replace the reference values of all matches |
 
 `pseudotest-update` overwrites the test file, or writes to the file given by `-o FILE`. Matches marked
-`protected: true` are never updated.
+`protected: true` are never updated. It also accepts `-p`, and `--timeout` and `--report` (long options only, as `-t`
+and `-r` select the update mode).
 
 Exit codes: `0` all passed, `1` an execution or a match failed, `2` invalid test file or command line, `99` internal
 error.

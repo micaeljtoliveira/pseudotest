@@ -234,3 +234,16 @@ class TestUpdatedFile:
         assert ws.test_file.read_text() == original
         assert ws.load_matches(updated)["energy"]["value"] == -42.505
         assert ws.run(test_file=updated).rc == OK
+
+
+class TestUpdateOptions:
+    def test_report_and_preserve(self, ws):
+        """pseudotest-update writes a report and keeps the working directory, as pseudotest does."""
+        ws.mock(OUTPUT)
+        ws.matches(ENERGY)
+        result = ws.update("-r", "--report", str(ws.report), "--preserve")
+
+        assert "Updated reference values in" in result.out
+        energy = ws.load_report()["Inputs"]["input.txt"]["Matches"]["energy"]
+        assert (energy["value"], energy["reference"], energy["status"]) == (-42.505, -42.5, "fail")
+        assert [path.name for path in ws.work_root.iterdir()][0].startswith("pseudotest_")
